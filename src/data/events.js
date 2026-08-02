@@ -1,0 +1,181 @@
+export const MOCK_EVENTS = [
+  // Upcoming Events (4)
+  {
+    _id: 'evt_up_1',
+    title: 'CodeMania Hackathon 2026',
+    date: '7th–9th September 2026',
+    status: 'Registration Open',
+    isUpcoming: true,
+    partner: 'Kickr Technology (Community Partner: GFG Campus Body Jamia Hamdard)',
+    prizePool: '₹2,50,000',
+    description: 'CodeMania Hackathon 2026 provides students with a dynamic platform to develop innovative solutions for real-world challenges while enhancing their technical and problem-solving skills. Participants collaborate in teams, receive guidance from mentors, and compete for prize pool and career opportunities.',
+    banner: 'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1200&q=80',
+    category: 'Hackathon'
+  },
+  {
+    _id: 'evt_up_2',
+    title: 'Python Bootcamp 2026',
+    date: 'Upcoming 2026',
+    status: 'Registration Open',
+    isUpcoming: true,
+    description: 'A beginner-friendly Python session covering core concepts and practical coding. Focused on building strong fundamentals through hands-on learning.',
+    banner: 'https://images.unsplash.com/photo-1526379095098-d400fd0bf935?auto=format&fit=crop&w=1200&q=80',
+    category: 'Bootcamp'
+  },
+  {
+    _id: 'evt_up_3',
+    title: 'Code Starter Session — Canva & Design Skills',
+    date: 'Upcoming 2026',
+    status: 'Announced',
+    isUpcoming: true,
+    description: 'Canva tutorials and creative design sessions to boost visual communication, content creation, and branding skills for student developers.',
+    banner: 'https://images.unsplash.com/photo-1542744094-3a3172720222?auto=format&fit=crop&w=1200&q=80',
+    category: 'Workshop'
+  },
+  {
+    _id: 'evt_up_4',
+    title: 'Collaborations and Partnerships Series',
+    date: 'Upcoming 2026',
+    status: 'Planning',
+    isUpcoming: true,
+    description: 'Planned collaborations with other technical societies, industry experts, and organizations to bring diverse learning opportunities to Jamia Hamdard students.',
+    banner: 'https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=1200&q=80',
+    category: 'Networking'
+  },
+
+  // Past Events (13)
+  {
+    _id: 'evt_past_1',
+    title: 'Full Stack and DSA Guidance',
+    date: '26th June 2025',
+    speaker: 'Vikas Thakur',
+    status: 'Completed',
+    isUpcoming: false,
+    description: 'Organized by GeeksforGeeks Campus Body, Jamia Hamdard. Conducted by Vikas Thakur, sharing valuable insights into Full Stack web development, coding practices, DSA fundamentals, and career opportunities in software development.',
+    banner: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&q=80',
+    category: 'Guidance'
+  },
+  {
+    _id: 'evt_past_2',
+    title: 'GFG Connect – Early Access Awareness Session',
+    date: '27th July 2025',
+    status: 'Completed',
+    isUpcoming: false,
+    description: 'Introduced students to GFG Connect, GeeksforGeeks 1-to-1 mentorship platform. Highlighted features including personalized mentorship, career guidance, interview preparation, and structured learning paths.',
+    banner: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?auto=format&fit=crop&w=1200&q=80',
+    category: 'Mentorship'
+  },
+  {
+    _id: 'evt_past_3',
+    title: 'Guidance Session with Raghav Garg',
+    date: '29th August 2025',
+    speaker: 'Raghav Garg',
+    status: 'Completed',
+    isUpcoming: false,
+    description: 'Interactive online session providing insights into career growth, skill development, effective learning strategies, interview preparation, and industry expectations.',
+    banner: 'https://images.unsplash.com/photo-1475721027785-f74eccf877e2?auto=format&fit=crop&w=1200&q=80',
+    category: 'Speaker Session'
+  },
+  {
+    _id: 'evt_past_4',
+    title: 'Nation SkillUp Launch Awareness Session',
+    date: '5th September 2025',
+    status: 'Completed',
+    isUpcoming: false,
+    description: 'Introduced students to the Nation SkillUp platform, showcasing learning opportunities, industry-relevant courses, mentorship, and career development resources.',
+    banner: 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?auto=format&fit=crop&w=1200&q=80',
+    category: 'Awareness'
+  },
+  {
+    _id: 'evt_past_5',
+    title: 'GeeksforGeeks Campus Body Induction Event 2025',
+    date: '27th August 2025',
+    status: 'Completed',
+    isUpcoming: false,
+    description: 'Welcomed new students and introduced the community vision, technical workshops, coding contests, hackathons, and roadmap for the academic year.',
+    banner: 'https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=1200&q=80',
+    category: 'Induction'
+  },
+  {
+    _id: 'evt_past_6',
+    title: 'Web Development Bootcamp 2025',
+    date: '28th–30th October 2025',
+    status: 'Completed',
+    isUpcoming: false,
+    description: '3-day practical bootcamp covering HTML, CSS, JavaScript, Responsive Web Design, and Website Deployment through interactive sessions and hands-on project building.',
+    banner: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?auto=format&fit=crop&w=1200&q=80',
+    category: 'Bootcamp'
+  },
+  {
+    _id: 'evt_past_7',
+    title: 'GFG Connect – Expert Mentorship Awareness Session',
+    date: '8th November 2025',
+    status: 'Completed',
+    isUpcoming: false,
+    description: 'Showcased 1-to-1 mentorship, resume reviews, career advice, and interview preparation with industry professionals via GFG Connect.',
+    banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1200&q=80',
+    category: 'Mentorship'
+  },
+  {
+    _id: 'evt_past_8',
+    title: 'Coding Arena 2025',
+    date: '20th November 2025',
+    status: 'Completed',
+    isUpcoming: false,
+    description: 'Competitive MCQ contest hosted on GFG platform covering DSA, OS, DBMS, Computer Networks, Cloud Computing, and OOPs concepts.',
+    banner: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=1200&q=80',
+    category: 'Contest'
+  },
+  {
+    _id: 'evt_past_9',
+    title: 'AWS Hackathon',
+    date: '21st January 2026',
+    partner: 'AWS (Amazon Web Services)',
+    status: 'Completed',
+    isUpcoming: false,
+    description: 'Organized by GFG Campus Body Jamia Hamdard in collaboration with AWS. Focused on cloud-based problem solving, teamwork, and innovation.',
+    banner: 'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1200&q=80',
+    category: 'Hackathon'
+  },
+  {
+    _id: 'evt_past_10',
+    title: 'Alumni Interaction Session',
+    date: '7th February 2026',
+    partner: 'Placement Cell, Jamia Hamdard',
+    status: 'Completed',
+    isUpcoming: false,
+    description: 'Organized in collaboration with the Placement Cell to connect students with successful alumni for career guidance, industry trends, and skill development.',
+    banner: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1200&q=80',
+    category: 'Alumni'
+  },
+  {
+    _id: 'evt_past_11',
+    title: 'Introduction to Cybersecurity',
+    date: '23rd February 2026',
+    status: 'Completed',
+    isUpcoming: false,
+    description: 'Provided fundamental knowledge of cybersecurity concepts, online safety, data protection, and emerging security challenges.',
+    banner: 'https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=1200&q=80',
+    category: 'Workshop'
+  },
+  {
+    _id: 'evt_past_12',
+    title: 'The Grand Gaming Showdown',
+    date: 'Past Event',
+    status: 'Completed',
+    isUpcoming: false,
+    description: 'An exciting and highly engaging gaming event organized by the GeeksforGeeks Campus Body, Jamia Hamdard.',
+    banner: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=1200&q=80',
+    category: 'Gaming'
+  },
+  {
+    _id: 'evt_past_13',
+    title: 'Canva Campus Workshop',
+    date: 'Past Event',
+    status: 'Completed',
+    isUpcoming: false,
+    description: 'Successfully organized workshop aimed at enhancing students design and creativity skills using Canva.',
+    banner: 'https://images.unsplash.com/photo-1542744094-3a3172720222?auto=format&fit=crop&w=1200&q=80',
+    category: 'Workshop'
+  }
+];

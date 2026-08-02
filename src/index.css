@@ -1,0 +1,219 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#0d1117] text-gray-100 min-h-screen overflow-x-hidden;
+  }
+}
+
+/* Custom Glassmorphism & Micro-animations */
+.glass-panel {
+  background: rgba(22, 27, 34, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(48, 54, 61, 0.6);
+}
+
+.glass-nav {
+  background: rgba(13, 17, 23, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+}
+
+.gradient-text {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 via-green-400 to-teal-300;
+}
+
+.gradient-button {
+  @apply bg-gradient-to-r from-[#2f9e44] to-[#1b5e20] hover:from-[#37b24d] hover:to-[#2b8a3e] text-white shadow-lg shadow-green-900/30 transition-all duration-200 active:scale-95;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0d1117;
+}
+::-webkit-scrollbar-thumb {
+  background: #21262d;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #30363d;
+}
+
+/* ─── Infinite Marquee Animations ───────────────────────────────────────────── */
+@keyframes marquee-left {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-50%, 0, 0); }
+}
+
+@keyframes marquee-right {
+  0% { transform: translate3d(-50%, 0, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+.animate-marquee-left {
+  display: flex;
+  width: max-content;
+  animation: marquee-left var(--marquee-duration, 35s) linear infinite;
+  will-change: transform;
+}
+
+.animate-marquee-right {
+  display: flex;
+  width: max-content;
+  animation: marquee-right var(--marquee-duration, 35s) linear infinite;
+  will-change: transform;
+}
+
+.marquee-container:hover .animate-marquee-left,
+.marquee-container:hover .animate-marquee-right {
+  animation-play-state: paused;
+}
+
+.marquee-mask {
+  mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee-left,
+  .animate-marquee-right {
+    animation: none !important;
+    width: auto !important;
+  }
+  .marquee-container {
+    overflow-x: auto !important;
+  }
+  .animate-float-slow,
+  .animate-float-medium,
+  .animate-float-fast {
+    animation: none !important;
+  }
+}
+
+/* ─── 3D Perspective & Motion System ────────────────────────────────────────── */
+.perspective-1000 {
+  perspective: 1000px;
+}
+.perspective-800 {
+  perspective: 800px;
+}
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-12px) rotate(2deg); }
+}
+
+@keyframes float-medium {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-18px) rotate(-3deg); }
+}
+
+@keyframes float-fast {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-24px) rotate(4deg); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.08); }
+}
+
+.animate-float-slow {
+  animation: float-slow 7s ease-in-out infinite;
+}
+
+.animate-float-medium {
+  animation: float-medium 5s ease-in-out infinite;
+}
+
+.animate-float-fast {
+  animation: float-fast 3.8s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 4s ease-in-out infinite;
+}
+
+/* 3D Card Hover Depth */
+.card-3d-hover {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+  transform-style: preserve-3d;
+}
+.card-3d-hover:hover {
+  transform: translateY(-6px) translateZ(10px) rotateX(2deg) rotateY(-2deg);
+  box-shadow: 0 16px 30px -10px rgba(47, 158, 68, 0.25), 0 0 12px rgba(47, 158, 68, 0.12);
+}
+
+/* ─── Developer Grid & Tech Aesthetics System ────────────────────────────────── */
+body {
+  background-color: #0a0d12;
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(47, 158, 68, 0.14), transparent 45%),
+    linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 100% 100%, 48px 48px, 48px 48px;
+}
+
+/* Blinking Terminal Cursor */
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.animate-cursor {
+  animation: blink-cursor 1s steps(2, start) infinite;
+}
+
+/* Tech Eyebrow Tag */
+.tech-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #2f9e44;
+  background-color: rgba(47, 158, 68, 0.12);
+  border: 1px solid rgba(47, 158, 68, 0.3);
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.375rem;
+}
+
+/* Tech Corner Bracket Accents */
+.tech-corner {
+  position: relative;
+}
+.tech-corner::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid #2f9e44;
+  border-left: 2px solid #2f9e44;
+  border-top-left-radius: 4px;
+}
+.tech-corner::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-bottom: 2px solid #06b6d4;
+  border-right: 2px solid #06b6d4;
+  border-bottom-right-radius: 4px;
+}

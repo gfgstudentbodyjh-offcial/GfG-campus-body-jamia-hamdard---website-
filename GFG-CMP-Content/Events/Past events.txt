@@ -1,0 +1,36 @@
+• Full Stack and DSA Guidance (26th June 2025)
+  The Full Stack and DSA Guidance session was organized by the GeeksforGeeks Campus Body, Jamia Hamdard to help students understand the fundamentals of Full Stack Development and Data Structures & Algorithms (DSA). The session was conducted by Vikas Thakur, who shared valuable insights into web development, coding practices, and career opportunities in software development. Students actively participated in the interactive session, asked insightful questions, and gained practical guidance on building a strong foundation for placements and technical interviews. The event successfully motivated students to enhance their programming skills and pursue continuous learning in the field of technology
+
+• GFG Connect – Early Access Awareness Session (27th July 2025)
+  The GFG Connect – Early Access Awareness Session was organized by the GeeksforGeeks Campus Body, Jamia Hamdard to introduce students to GFG Connect, GeeksforGeeks' 1-to-1 mentorship platform. The session highlighted the platform's key features, including personalized mentorship, career guidance, interview preparation, and structured learning paths. Students were informed about the benefits of early access and encouraged to connect with experienced mentors to strengthen their technical and professional skills. The initiative received a positive response and motivated students to make the most of mentorship opportunities for their career growth.
+
+• Guidance Session with Raghav Garg (29th August 2025)
+  The Guidance Session with Raghav Garg was organized by the GeeksforGeeks Campus Body, Jamia Hamdard to provide students with valuable insights into career growth, skill development, and opportunities in the technology industry. Conducted in an interactive online format, the session covered topics such as effective learning strategies, interview preparation, industry expectations, and building a strong technical profile. Students actively engaged with the speaker through discussions and Q&A, gaining practical advice and motivation to achieve their academic and professional goals. The session proved to be highly informative and inspiring for all participants.
+
+• Nation SkillUp Launch Awareness Session (5th September 2025)
+  The Nation SkillUp Launch Awareness Session was organized by the GeeksforGeeks Campus Body, Jamia Hamdard to introduce students to the newly launched Nation SkillUp platform. The session highlighted its learning opportunities, industry-relevant courses, mentorship, and career development resources designed to help students enhance their technical and professional skills. Participants were guided through the platform's features, registration process, and the benefits of continuous upskilling. The initiative encouraged students to take advantage of the platform and stay competitive in today's rapidly evolving technology landscape.
+
+• GeeksforGeeks Campus Body Induction Event 2025 (27th August 2025)
+  The GeeksforGeeks Campus Body Induction Event 2025 was organized by the GeeksforGeeks Campus Body, Jamia Hamdard to welcome new students and introduce them to the community's vision, activities, and opportunities. The session highlighted the benefits of being a part of the Campus Body, including technical workshops, coding contests, hackathons, mentorship programs, and leadership opportunities. Core team members shared the achievements of previous sessions, upcoming initiatives, and the roadmap for the academic year. The event witnessed enthusiastic participation from students, encouraging them to engage actively in the community and develop their technical, professional, and leadership skills.
+
+• Web Development Bootcamp 2025 (28th–30th October 2025)
+  The Web Development Bootcamp 2025 was organized by the GeeksforGeeks Campus Body, Jamia Hamdard to provide students with practical knowledge of modern web development. Conducted over three days, the bootcamp covered the fundamentals of HTML, CSS, JavaScript, Responsive Web Design, and Website Deployment through interactive sessions and hands-on projects. Participants gained real-world coding experience while learning industry best practices and building responsive web applications. The event also encouraged collaboration, networking, and project-based learning, enabling students to strengthen their technical skills and prepare for future internships and software development careers.
+
+• GFG Connect – Expert Mentorship Awareness Session (8th November 2025)
+   The GFG Connect – Expert Mentorship Awareness Session was organized by the GeeksforGeeks Campus Body, Jamia Hamdard to introduce students to the GFG Connect platform, where they could interact directly with experienced mentors and industry professionals. The session showcased the platform's features, including one-to-one mentorship, career guidance, interview preparation, resume reviews, and personalized learning support. Students were encouraged to connect with experts, seek career advice, and enhance their technical and professional skills through continuous mentorship. The initiative received an enthusiastic response and inspired participants to make effective use of the platform for their academic and career growth.
+
+• Coding Arena 2025 (20th November 2025)
+  The Coding Arena 2025 was organized by the GeeksforGeeks Campus Body, Jamia Hamdard to provide students with a competitive platform to test and enhance their technical knowledge. Hosted on the GeeksforGeeks platform, the contest featured 20 MCQ-based questions covering key computer science subjects, including Data Structures and Algorithms (DSA), Operating Systems (OS), Database Management Systems (DBMS), Computer Networks (CN), Cloud Computing, and Object-Oriented Programming (OOPs). The event encouraged students to strengthen their problem-solving abilities, assess their conceptual understanding, and engage in healthy competition. It witnessed enthusiastic participation and successfully promoted continuous learning and technical excellence among students.
+
+• AWS Hackathon (21st January 2026)
+ The AWS Hackathon was conducted on 20th January 2026 by the GeeksforGeeks Campus Body Jamia Hamdard is collaborated with Aws. It focused on cloud-based problem solving and teamwork, with active student participation. The event successfully promoted practical learning and innovation. 
+
+• Alumni Interaction Session (7th February 2026)
+The Alumni Interaction Session was organized by the GeeksforGeeks Campus Body Jamia Hamdard in collaboration with the Placement Cell. It aimed to connect students with alumni and provide guidance on careers, industry trends, and skill development.
+
+• Introduction to Cybersecurity (23rd February 2026)
+The Introduction to Cybersecurity session will be organized by the GeeksforGeeks Campus Body Jamia Hamdard to provide fundamental knowledge of cybersecurity concepts and practices. The session will help students understand online safety, data protection, and emerging secession challenges.
+
+• The Grand Gaming Showdown
+The Grand Gaming Showdown was an exciting and highly engaging gaming event organized by the GeeksforGeeks Campus Body, Jamia Hamdard.
+
