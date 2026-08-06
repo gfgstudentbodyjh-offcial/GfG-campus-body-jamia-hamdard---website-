@@ -48,7 +48,7 @@ export default function CampusMantriHistory() {
   const newestSessionId = sortedMantris[0]?._id;
 
   return (
-    <div className="min-h-screen bg-[#0a0d12] text-gray-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-transparent text-gray-100 flex flex-col font-sans">
       <Navbar />
       <main className="flex-1 py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full space-y-8">
         

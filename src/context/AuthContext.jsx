@@ -5,58 +5,148 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [member, setMember] = useState(null);
+  const [adminAccess, setAdminAccess] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('gfg_token') || '');
   const [loading, setLoading] = useState(true);
+
+  // Global Auth Modal State
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalTab, setAuthModalTab] = useState('login'); // 'login' | 'signup'
+
+  const openAuthModal = (tab = 'login') => {
+    setAuthModalTab(tab);
+    setIsAuthModalOpen(true);
+  };
+
+  const closeAuthModal = () => {
+    setIsAuthModalOpen(false);
+  };
 
   useEffect(() => {
     const checkAuth = async () => {
       if (!token) {
         setUser(null);
-        setLoading(false);
-        return;
-      }
-
-      if (token === 'demo_jwt_token_2026') {
-        setUser({ username: 'Super Admin', email: 'admin@gfgcampus.org', role: 'Super Admin' });
+        setMember(null);
+        setAdminAccess(null);
         setLoading(false);
         return;
       }
 
       try {
         const res = await api.get('/auth/me');
-        setUser(res.data.user);
+        if (res.data.success || res.data.user) {
+          setUser(res.data.user);
+          setMember(res.data.member || null);
+          setAdminAccess(res.data.adminAccess || null);
+        } else {
+          throw new Error('Invalid token response');
+        }
       } catch (err) {
         console.warn('Token verification failed:', err.message);
         localStorage.removeItem('gfg_token');
         setToken('');
         setUser(null);
+        setMember(null);
+        setAdminAccess(null);
       }
       setLoading(false);
     };
     checkAuth();
   }, [token]);
 
+  // Standard User Login
   const login = async (email, password) => {
     try {
       const res = await api.post('/auth/login', { email, password });
-      const { token: newToken, user: userData } = res.data;
+      const { token: newToken, user: userData, member: memberData, adminAccess: adminData } = res.data;
       localStorage.setItem('gfg_token', newToken);
       setToken(newToken);
       setUser(userData);
+      setMember(memberData);
+      setAdminAccess(adminData || null);
+      closeAuthModal();
       return { success: true };
     } catch (err) {
-      // Fallback demo login if server unreachable
-      if (email === 'admin@gfgcampus.org' && password === 'admin123') {
-        const demoToken = 'demo_jwt_token_2026';
-        const demoUser = { username: 'Super Admin', email, role: 'Super Admin' };
-        localStorage.setItem('gfg_token', demoToken);
-        setToken(demoToken);
-        setUser(demoUser);
-        return { success: true };
-      }
       return {
         success: false,
-        message: err.response?.data?.message || 'Login failed. Please check credentials.'
+        message: err.response?.data?.message || 'Invalid email or password.'
+      };
+    }
+  };
+
+  // 3-Factor Super Admin Login (Email + Password + Admin PIN)
+  const adminLogin = async (email, password, pin) => {
+    try {
+      const res = await api.post('/auth/admin-login', { email, password, pin });
+      const { token: newToken, user: userData, member: memberData, adminAccess: adminData } = res.data;
+      localStorage.setItem('gfg_token', newToken);
+      setToken(newToken);
+      setUser(userData);
+      setMember(memberData);
+      setAdminAccess(adminData || null);
+      closeAuthModal();
+      return { success: true };
+    } catch (err) {
+      return {
+        success: false,
+        message: err.response?.data?.message || 'Invalid administrative credentials.'
+      };
+    }
+  };
+
+  const signup = async (signupData) => {
+    try {
+      const res = await api.post('/auth/signup', signupData);
+      const { token: newToken, user: userData, member: memberData } = res.data;
+      localStorage.setItem('gfg_token', newToken);
+      setToken(newToken);
+      setUser(userData);
+      setMember(memberData);
+      closeAuthModal();
+      return { success: true, message: res.data.message };
+    } catch (err) {
+      return {
+        success: false,
+        message: err.response?.data?.message || 'Registration failed. Please check details.'
+      };
+    }
+  };
+
+  const changePassword = async (currentPassword, newPassword, confirmPassword) => {
+    try {
+      const res = await api.patch('/auth/change-password', {
+        currentPassword,
+        newPassword,
+        confirmPassword
+      });
+      return {
+        success: true,
+        message: res.data.message || '✓ Password updated successfully.'
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: err.response?.data?.message || 'Failed to change password. Please check your credentials.'
+      };
+    }
+  };
+
+  const changeAdminPin = async (currentPin, newPin, confirmPin) => {
+    try {
+      const res = await api.patch('/auth/change-admin-pin', {
+        currentPin,
+        newPin,
+        confirmPin
+      });
+      return {
+        success: true,
+        message: res.data.message || '✓ Admin PIN updated successfully.'
+      };
+    } catch (err) {
+      return {
+        success: false,
+        message: err.response?.data?.message || 'Failed to change Admin PIN.'
       };
     }
   };
@@ -65,10 +155,47 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('gfg_token');
     setToken('');
     setUser(null);
+    setMember(null);
+    setAdminAccess(null);
+    try {
+      api.post('/auth/logout');
+    } catch (e) {}
+  };
+
+  const refreshUser = async () => {
+    if (!token) return;
+    try {
+      const res = await api.get('/auth/me');
+      if (res.data.user) {
+        setUser(res.data.user);
+        setMember(res.data.member || null);
+        setAdminAccess(res.data.adminAccess || null);
+      }
+    } catch (e) {}
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{
+      user,
+      member,
+      adminAccess,
+      token,
+      loading,
+      login,
+      adminLogin,
+      signup,
+      changePassword,
+      changeAdminPin,
+      logout,
+      refreshUser,
+      isAuthenticated: !!user,
+      isAdminAuthenticated: !!adminAccess && adminAccess.adminRole,
+      isAuthModalOpen,
+      authModalTab,
+      openAuthModal,
+      closeAuthModal,
+      setAuthModalTab
+    }}>
       {children}
     </AuthContext.Provider>
   );

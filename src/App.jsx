@@ -11,8 +11,10 @@ import ResourcesPage from './pages/public/ResourcesPage';
 import CampusMantriHistory from './pages/public/CampusMantriHistory';
 import FormViewerPage from './pages/public/FormViewerPage';
 import CommunityFeed from './pages/public/CommunityFeed';
+import PostDetailPage from './pages/public/PostDetailPage';
 import LeaderboardPage from './pages/public/LeaderboardPage';
 import ProfilePage from './pages/public/ProfilePage';
+import MemberVerificationPage from './pages/public/MemberVerificationPage';
 
 // Admin Pages & Protected Layout
 import ProtectedRoute from './components/common/ProtectedRoute';
@@ -32,6 +34,7 @@ import MediaLibraryAdmin from './pages/admin/MediaLibraryAdmin';
 import HeroSettingsAdmin from './pages/admin/HeroSettingsAdmin';
 import AnalyticsSettingsAdmin from './pages/admin/AnalyticsSettingsAdmin';
 import FeedModerationAdmin from './pages/admin/FeedModerationAdmin';
+import AdministratorsAdmin from './pages/admin/AdministratorsAdmin';
 
 export default function App() {
   return (
@@ -47,8 +50,10 @@ export default function App() {
         <Route path="/mantri-history" element={<CampusMantriHistory />} />
         <Route path="/forms/:formId" element={<FormViewerPage />} />
         <Route path="/community" element={<CommunityFeed />} />
+        <Route path="/community/post/:postId" element={<PostDetailPage />} />
         <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/verify/member/:verificationId" element={<MemberVerificationPage />} />
 
         {/* Super Admin Login */}
         <Route path="/admin/login" element={<AdminLogin />} />
@@ -76,6 +81,7 @@ export default function App() {
           <Route path="hero-settings" element={<HeroSettingsAdmin />} />
           <Route path="analytics-settings" element={<AnalyticsSettingsAdmin />} />
           <Route path="feed-moderation" element={<FeedModerationAdmin />} />
+          <Route path="administrators" element={<AdministratorsAdmin />} />
         </Route>
 
         {/* Fallback Catch-all */}

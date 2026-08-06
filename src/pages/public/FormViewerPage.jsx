@@ -47,7 +47,7 @@ export default function FormViewerPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0d1117] text-gray-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-transparent text-gray-100 flex flex-col font-sans">
       <Navbar />
       <main className="flex-1 py-16 px-4 sm:px-6 lg:px-8 max-w-3xl mx-auto w-full">
         

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Upload, Image as ImageIcon, Search, Check, Folder, X, UploadCloud } from 'lucide-react';
 import api from '../../services/api';
+import { useAdminTheme } from '../../context/AdminThemeContext';
 
 export default function MediaPicker({ isOpen, onClose, onSelectMedia, currentFolder = 'General' }) {
+  const { isLight } = useAdminTheme();
   const [activeTab, setActiveTab] = useState('library'); // 'library' | 'upload'
   const [folder, setFolder] = useState(currentFolder);
   const [search, setSearch] = useState('');
@@ -26,13 +28,11 @@ export default function MediaPicker({ isOpen, onClose, onSelectMedia, currentFol
       const res = await api.get('/media', { params: { folder: folder === 'All' ? '' : folder, search } });
       setAssets(res.data.data || []);
     } catch (err) {
-      console.warn('Failed to load media assets from server:', err);
-      // Fallback sample assets
+      console.warn('Failed to load media assets:', err);
       setAssets([
         { _id: 'a1', url: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=600&q=80', filename: 'hackathon_banner.jpg', folder: 'Events' },
         { _id: 'a2', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=600&q=80', filename: 'mantri_avatar.jpg', folder: 'Campus Mantri' },
-        { _id: 'a3', url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=600&q=80', filename: 'faculty_advisor.jpg', folder: 'Faculty' },
-        { _id: 'a4', url: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=600&q=80', filename: 'team_meeting.jpg', folder: 'Gallery' }
+        { _id: 'a3', url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=600&q=80', filename: 'faculty_advisor.jpg', folder: 'Faculty' }
       ]);
     }
     setLoading(false);
@@ -63,43 +63,45 @@ export default function MediaPicker({ isOpen, onClose, onSelectMedia, currentFol
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div className="bg-[#161b22] border border-[#30363d] rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+      <div className={`rounded-2xl border w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden transition-colors ${
+        isLight ? 'bg-white border-gray-200 text-gray-900' : 'bg-[#161b22] border-[#30363d] text-white'
+      }`}>
         
         {/* Header */}
-        <div className="p-5 border-b border-[#30363d] flex items-center justify-between">
+        <div className={`p-5 border-b flex items-center justify-between ${isLight ? 'border-gray-200' : 'border-[#30363d]'}`}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#2f9e44]/20 border border-[#2f9e44]/30 flex items-center justify-center text-[#2f9e44]">
               <ImageIcon className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white">Universal Media Picker</h3>
-              <p className="text-xs text-gray-400">Select from Media Library or upload new asset to Cloudinary</p>
+              <h3 className={`text-base font-extrabold ${isLight ? 'text-gray-900' : 'text-white'}`}>Universal Media Picker</h3>
+              <p className={`text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Select from Media Library or upload new asset to Cloudinary</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#21262d] text-gray-400 hover:text-white">
+          <button onClick={onClose} className={isLight ? 'text-gray-400 hover:text-gray-700' : 'text-gray-400 hover:text-white'}>
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-[#30363d] bg-[#0d1117]">
+        <div className={`flex border-b ${isLight ? 'bg-slate-50 border-gray-200' : 'bg-[#0d1117] border-[#30363d]'}`}>
           <button
             onClick={() => setActiveTab('library')}
-            className={`px-6 py-3 text-sm font-semibold border-b-2 flex items-center gap-2 transition-all ${
+            className={`px-6 py-3 text-xs font-bold border-b-2 flex items-center gap-2 transition-all ${
               activeTab === 'library'
-                ? 'border-[#2f9e44] text-[#2f9e44] bg-[#161b22]'
-                : 'border-transparent text-gray-400 hover:text-gray-200'
+                ? isLight ? 'border-[#2f9e44] text-[#2f9e44] bg-white' : 'border-[#2f9e44] text-[#2f9e44] bg-[#161b22]'
+                : isLight ? 'border-transparent text-gray-500 hover:text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-200'
             }`}
           >
             <Folder className="w-4 h-4" /> Media Library
           </button>
           <button
             onClick={() => setActiveTab('upload')}
-            className={`px-6 py-3 text-sm font-semibold border-b-2 flex items-center gap-2 transition-all ${
+            className={`px-6 py-3 text-xs font-bold border-b-2 flex items-center gap-2 transition-all ${
               activeTab === 'upload'
-                ? 'border-[#2f9e44] text-[#2f9e44] bg-[#161b22]'
-                : 'border-transparent text-gray-400 hover:text-gray-200'
+                ? isLight ? 'border-[#2f9e44] text-[#2f9e44] bg-white' : 'border-[#2f9e44] text-[#2f9e44] bg-[#161b22]'
+                : isLight ? 'border-transparent text-gray-500 hover:text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-200'
             }`}
           >
             <UploadCloud className="w-4 h-4" /> Upload New File
@@ -118,9 +120,11 @@ export default function MediaPicker({ isOpen, onClose, onSelectMedia, currentFol
                     <button
                       key={f}
                       onClick={() => setFolder(f)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
                         folder === f
-                          ? 'bg-[#2f9e44] text-white'
+                          ? 'bg-[#2f9e44] text-white shadow-sm'
+                          : isLight
+                          ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
                           : 'bg-[#21262d] text-gray-400 hover:text-white border border-[#30363d]'
                       }`}
                     >
@@ -130,32 +134,34 @@ export default function MediaPicker({ isOpen, onClose, onSelectMedia, currentFol
                 </div>
 
                 <div className="relative w-full sm:w-64">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <Search className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${isLight ? 'text-gray-400' : 'text-gray-500'}`} />
                   <input
                     type="text"
                     placeholder="Search media..."
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#2f9e44]"
+                    className={`w-full rounded-xl pl-9 pr-3 py-1.5 text-xs font-medium border focus:outline-none focus:border-[#2f9e44] ${
+                      isLight ? 'bg-white border-gray-300 text-gray-900 placeholder-gray-400' : 'bg-[#0d1117] border-[#30363d] text-white'
+                    }`}
                   />
                 </div>
               </div>
 
               {/* Media Asset Grid */}
               {loading ? (
-                <div className="py-12 flex justify-center text-gray-400">Loading Media Library...</div>
+                <div className={`py-12 flex justify-center text-xs font-semibold ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Loading Media Library...</div>
               ) : assets.length === 0 ? (
-                <div className="py-12 text-center text-gray-500 text-sm">No assets found in folder "{folder}"</div>
+                <div className={`py-12 text-center text-xs font-semibold ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>No assets found in folder "{folder}"</div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                   {assets.map(item => (
                     <div
                       key={item._id}
                       onClick={() => setSelectedUrl(item.url)}
-                      className={`group relative rounded-xl overflow-hidden border cursor-pointer aspect-square bg-[#0d1117] transition-all ${
+                      className={`group relative rounded-xl overflow-hidden border cursor-pointer aspect-square transition-all ${
                         selectedUrl === item.url
                           ? 'border-[#2f9e44] ring-2 ring-[#2f9e44]/50 scale-[0.98]'
-                          : 'border-[#30363d] hover:border-gray-500'
+                          : isLight ? 'border-gray-200 bg-gray-50 hover:border-gray-400' : 'border-[#30363d] bg-[#0d1117] hover:border-gray-500'
                       }`}
                     >
                       <img src={item.url} alt={item.filename} className="w-full h-full object-cover" />
@@ -176,23 +182,27 @@ export default function MediaPicker({ isOpen, onClose, onSelectMedia, currentFol
           ) : (
             /* Upload Tab */
             <form onSubmit={handleFileUpload} className="max-w-md mx-auto space-y-6 py-6">
-              <div className="border-2 border-dashed border-[#30363d] hover:border-[#2f9e44] rounded-2xl p-8 text-center bg-[#0d1117] transition-all">
-                <CloudUpload className="w-12 h-12 text-[#2f9e44] mx-auto mb-3" />
-                <p className="text-sm font-semibold text-white">Select image or media asset to upload</p>
-                <p className="text-xs text-gray-500 mt-1">PNG, JPG, WEBP, MP4 supported up to 10MB</p>
+              <div className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all ${
+                isLight ? 'border-gray-300 bg-slate-50 hover:border-[#2f9e44]' : 'border-[#30363d] bg-[#0d1117] hover:border-[#2f9e44]'
+              }`}>
+                <UploadCloud className="w-12 h-12 text-[#2f9e44] mx-auto mb-3" />
+                <p className={`text-sm font-bold ${isLight ? 'text-gray-900' : 'text-white'}`}>Select image or media asset to upload</p>
+                <p className={`text-xs mt-1 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>PNG, JPG, WEBP, MP4 supported up to 10MB</p>
                 <input
                   type="file"
                   onChange={e => setUploadFile(e.target.files[0])}
-                  className="mt-4 block w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#2f9e44] file:text-white hover:file:bg-[#238636] cursor-pointer"
+                  className="mt-4 block w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#2f9e44] file:text-white hover:file:bg-[#238636] cursor-pointer"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-2">Target Folder</label>
+                <label className={`block text-xs font-semibold mb-2 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>Target Folder</label>
                 <select
                   value={folder}
                   onChange={e => setFolder(e.target.value)}
-                  className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#2f9e44]"
+                  className={`w-full rounded-xl px-3 py-2 text-xs font-medium border focus:outline-none focus:border-[#2f9e44] ${
+                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#0d1117] border-[#30363d] text-white'
+                  }`}
                 >
                   {folders.filter(f => f !== 'All').map(f => (
                     <option key={f} value={f}>{f}</option>
@@ -203,7 +213,7 @@ export default function MediaPicker({ isOpen, onClose, onSelectMedia, currentFol
               <button
                 type="submit"
                 disabled={!uploadFile || uploading}
-                className="w-full py-3 rounded-xl gradient-button font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full py-3 rounded-xl gradient-button font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
               >
                 {uploading ? 'Uploading to Cloudinary...' : 'Upload & Select Media'}
               </button>
@@ -213,12 +223,12 @@ export default function MediaPicker({ isOpen, onClose, onSelectMedia, currentFol
 
         {/* Footer Actions */}
         {activeTab === 'library' && (
-          <div className="p-4 border-t border-[#30363d] bg-[#0d1117] flex items-center justify-between">
-            <span className="text-xs text-gray-400">
+          <div className={`p-4 border-t flex items-center justify-between ${isLight ? 'bg-slate-50 border-gray-200' : 'bg-[#0d1117] border-[#30363d]'}`}>
+            <span className={`text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
               {selectedUrl ? 'Asset selected ready to insert' : 'Click on an asset to select'}
             </span>
             <div className="flex gap-3">
-              <button onClick={onClose} className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white">
+              <button onClick={onClose} className={`px-4 py-2 text-xs font-bold ${isLight ? 'text-gray-600 hover:text-gray-900' : 'text-gray-400 hover:text-white'}`}>
                 Cancel
               </button>
               <button
@@ -227,7 +237,7 @@ export default function MediaPicker({ isOpen, onClose, onSelectMedia, currentFol
                   onSelectMedia(selectedUrl);
                   onClose();
                 }}
-                className="px-5 py-2 text-xs font-bold rounded-lg gradient-button disabled:opacity-40"
+                className="px-5 py-2 text-xs font-bold rounded-xl gradient-button disabled:opacity-40 shadow-md"
               >
                 Confirm & Use Image
               </button>

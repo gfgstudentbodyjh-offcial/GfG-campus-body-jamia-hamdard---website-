@@ -15,12 +15,18 @@ export default function TechCard({ children, className = '', cornerAccents = tru
     cardRef.current.style.setProperty('--mouse-y', `${y}px`);
   };
 
+  const hasCustomBg = /\bbg-/.test(className);
+  const hasCustomBorder = /\bborder-/.test(className);
+
+  const defaultBg = hasCustomBg ? '' : 'bg-[#121721]/90';
+  const defaultBorder = hasCustomBorder ? '' : 'border border-[#30363d]';
+
   return (
     <div
       ref={cardRef}
       onMouseMove={handleMouseMove}
       onClick={onClick}
-      className={`relative glass-panel bg-[#121721]/90 border border-[#30363d] rounded-2xl overflow-hidden transition-all duration-300 hover:border-[#2f9e44]/60 hover:-translate-y-1 shadow-xl group ${
+      className={`relative glass-panel ${defaultBg} ${defaultBorder} rounded-2xl overflow-hidden transition-all duration-300 hover:border-[#2f9e44]/60 hover:-translate-y-1 shadow-xl group ${
         cornerAccents ? 'tech-corner' : ''
       } ${className}`}
       style={{

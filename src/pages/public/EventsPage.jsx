@@ -28,8 +28,8 @@ export default function EventsPage() {
     load();
   }, []);
 
-  const upcomingEvents = events.filter((e) => e.isUpcoming || e.status === 'Registration Open' || e.status === 'Announced' || e.status === 'Planning');
-  const pastEvents = events.filter((e) => !upcomingEvents.includes(e));
+  const upcomingEvents = events.filter((e) => e.status !== 'Completed' && e.status !== 'Archived' && e.isUpcoming !== false);
+  const pastEvents = events.filter((e) => e.status === 'Completed' || e.status === 'Archived' || e.isUpcoming === false);
 
   const displayedEvents = activeTab === 'Upcoming'
     ? upcomingEvents
@@ -38,7 +38,7 @@ export default function EventsPage() {
     : events;
 
   return (
-    <div className="min-h-screen bg-[#0a0d12] text-gray-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-transparent text-gray-100 flex flex-col font-sans">
       <Navbar />
       <main className="flex-1 py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full space-y-12">
         

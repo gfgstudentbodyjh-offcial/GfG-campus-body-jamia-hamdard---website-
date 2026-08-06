@@ -1,12 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { ChevronDown, Menu, X, User, BookOpen, Users, Trophy, Image as ImageIcon } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ChevronDown, Menu, X, User, BookOpen, Users, Trophy, Image as ImageIcon, LogOut, Shield, Bookmark, CreditCard } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import AuthModal from './AuthModal';
 
 export default function Navbar() {
+  const { user, member, isAuthenticated, loading, openAuthModal, logout } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  
   const location = useLocation();
+  const navigate = useNavigate();
   const dropdownRef = useRef(null);
+  const userMenuRef = useRef(null);
 
   // Primary visible links in main navigation
   const primaryLinks = [
@@ -29,16 +36,20 @@ export default function Navbar() {
 
   const isMoreActive = moreLinks.some((link) => location.pathname === link.path);
 
-  // Close dropdown on outside click or Escape key
+  // Close dropdowns on outside click or Escape key
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setIsMoreOpen(false);
       }
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
+        setIsUserMenuOpen(false);
+      }
     };
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
         setIsMoreOpen(false);
+        setIsUserMenuOpen(false);
         setIsOpen(false);
       }
     };
@@ -53,11 +64,26 @@ export default function Navbar() {
   // Close menus on route change
   useEffect(() => {
     setIsMoreOpen(false);
+    setIsUserMenuOpen(false);
     setIsOpen(false);
   }, [location.pathname]);
 
+  const handleLogout = () => {
+    logout();
+    setIsUserMenuOpen(false);
+    navigate('/');
+  };
+
+  const displayName = member?.name || user?.username || 'Member Profile';
+  const displayPhoto = member?.photo || user?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=2f9e44&color=fff&bold=true`;
+  const isSuperAdmin = user?.role === 'Super Admin' || user?.role === 'Admin';
+
   return (
     <header className="sticky top-0 z-50 glass-nav border-b border-[#30363d]/80 transition-all duration-200">
+      
+      {/* Universal Auth Modal */}
+      <AuthModal />
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-[72px]">
           
@@ -105,7 +131,7 @@ export default function Navbar() {
               );
             })}
 
-            {/* 3. More Dropdown */}
+            {/* More Dropdown */}
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setIsMoreOpen(!isMoreOpen)}
@@ -119,7 +145,6 @@ export default function Navbar() {
                 <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isMoreOpen ? 'rotate-180 text-[#2f9e44]' : ''}`} />
               </button>
 
-              {/* Dropdown Menu */}
               {isMoreOpen && (
                 <div className="absolute right-0 mt-2 w-60 glass-panel bg-[#161b22] border border-[#30363d] rounded-2xl p-2 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-150">
                   {moreLinks.map((item) => {
@@ -151,22 +176,109 @@ export default function Navbar() {
             </div>
           </nav>
 
-          {/* 4. Desktop Profile Control */}
+          {/* 3. Desktop Auth / Profile Control */}
           <div className="hidden lg:flex items-center gap-3">
-            <Link
-              to="/profile"
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all duration-200 border ${
-                isActive('/profile')
-                  ? 'bg-[#21262d] text-white border-[#2f9e44]'
-                  : 'bg-[#161b22] text-gray-300 hover:text-white border-[#30363d] hover:border-[#2f9e44]/50'
-              }`}
-            >
-              <User className="w-4 h-4 text-[#2f9e44]" />
-              <span>Profile</span>
-            </Link>
+            {loading ? (
+              <div className="h-9 w-24 rounded-xl bg-[#21262d] animate-pulse"></div>
+            ) : !isAuthenticated ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => openAuthModal('login')}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-300 hover:text-white hover:bg-[#21262d] transition-all"
+                >
+                  Sign In
+                </button>
+                <button
+                  onClick={() => openAuthModal('signup')}
+                  className="px-4 py-2 rounded-xl gradient-button text-xs font-bold shadow-md hover:scale-[1.02] transition-transform"
+                >
+                  Join Community
+                </button>
+              </div>
+            ) : (
+              <div className="relative" ref={userMenuRef}>
+                <button
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-[#161b22] border border-[#30363d] hover:border-[#2f9e44]/60 transition-all text-xs font-semibold text-white shadow-sm"
+                >
+                  <img
+                    src={displayPhoto}
+                    alt={displayName}
+                    className="w-7 h-7 rounded-full object-cover border border-[#2f9e44]"
+                  />
+                  <span className="max-w-[120px] truncate">{displayName}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isUserMenuOpen ? 'rotate-180 text-[#2f9e44]' : ''}`} />
+                </button>
+
+                {isUserMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 glass-panel bg-[#161b22] border border-[#30363d] rounded-2xl p-2 shadow-2xl z-50 animate-in fade-in duration-150">
+                    
+                    {/* User Summary Header */}
+                    <div className="p-3 border-b border-[#30363d] mb-1">
+                      <p className="font-bold text-xs text-white truncate">{displayName}</p>
+                      <p className="text-[10px] text-[#2f9e44] font-mono uppercase font-bold mt-0.5">
+                        {member?.accountType || user?.role || 'Visitor'} Account
+                      </p>
+                    </div>
+
+                    <Link
+                      to="/profile"
+                      onClick={() => setIsUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#21262d] font-semibold transition-colors"
+                    >
+                      <User className="w-4 h-4 text-[#2f9e44]" /> My Profile
+                    </Link>
+
+                    <Link
+                      to="/community"
+                      onClick={() => setIsUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#21262d] font-semibold transition-colors"
+                    >
+                      <Users className="w-4 h-4 text-[#2f9e44]" /> Community Feed
+                    </Link>
+
+                    <Link
+                      to="/profile?tab=saved"
+                      onClick={() => setIsUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#21262d] font-semibold transition-colors"
+                    >
+                      <Bookmark className="w-4 h-4 text-[#2f9e44]" /> Saved Posts
+                    </Link>
+
+                    <Link
+                      to="/profile?tab=card"
+                      onClick={() => setIsUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-[#21262d] font-semibold transition-colors"
+                    >
+                      <CreditCard className="w-4 h-4 text-[#2f9e44]" /> Membership Card
+                    </Link>
+
+                    {isSuperAdmin && (
+                      <Link
+                        to="/admin"
+                        onClick={() => setIsUserMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 font-bold border border-emerald-500/30 my-1 transition-colors"
+                      >
+                        <Shield className="w-4 h-4" /> Admin Console
+                      </Link>
+                    )}
+
+                    <div className="border-t border-[#30363d] pt-1 mt-1">
+                      <button
+                        onClick={handleLogout}
+                        className="w-full text-left flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-red-400 hover:bg-red-500/10 font-semibold transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" /> Sign Out
+                      </button>
+                    </div>
+
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* 5. Mobile Toggle */}
+          {/* 4. Mobile Toggle */}
           <div className="lg:hidden flex items-center">
             <button
               onClick={() => setIsOpen(!isOpen)}
@@ -180,7 +292,7 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* 6. Mobile Drawer */}
+      {/* 5. Mobile Drawer */}
       {isOpen && (
         <div className="lg:hidden glass-panel border-b border-[#30363d] px-4 pt-3 pb-6 space-y-4 animate-in fade-in duration-150">
           
@@ -231,16 +343,44 @@ export default function Navbar() {
             })}
           </div>
 
-          {/* Profile */}
-          <div className="pt-2 border-t border-[#30363d]">
-            <Link
-              to="/profile"
-              onClick={() => setIsOpen(false)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-semibold rounded-xl bg-[#21262d] text-white border border-[#30363d] hover:border-[#2f9e44]"
-            >
-              <User className="w-4 h-4 text-[#2f9e44]" />
-              <span>My Profile</span>
-            </Link>
+          {/* Mobile Auth Actions */}
+          <div className="pt-2 border-t border-[#30363d] space-y-2">
+            {!isAuthenticated ? (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => { setIsOpen(false); openAuthModal('login'); }}
+                  className="py-2.5 text-center text-xs font-bold rounded-xl bg-[#21262d] text-white border border-[#30363d]"
+                >
+                  Sign In
+                </button>
+                <button
+                  onClick={() => { setIsOpen(false); openAuthModal('signup'); }}
+                  className="py-2.5 text-center text-xs font-bold rounded-xl gradient-button text-white shadow-md"
+                >
+                  Join Community
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Link
+                  to="/profile"
+                  onClick={() => setIsOpen(false)}
+                  className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-bold rounded-xl bg-[#21262d] text-white border border-[#30363d]"
+                >
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-[#2f9e44]" />
+                    <span>My Profile</span>
+                  </div>
+                  <span className="text-[10px] text-[#2f9e44] font-mono">{member?.accountType || 'Visitor'}</span>
+                </Link>
+                <button
+                  onClick={handleLogout}
+                  className="w-full py-2.5 text-xs font-bold rounded-xl bg-red-500/10 text-red-400 border border-red-500/30 text-center"
+                >
+                  Sign Out
+                </button>
+              </div>
+            )}
           </div>
 
         </div>

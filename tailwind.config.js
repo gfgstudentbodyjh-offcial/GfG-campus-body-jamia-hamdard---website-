@@ -7,6 +7,12 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      spacing: {
+        '88': '22rem',
+      },
+      width: {
+        '88': '22rem',
+      },
       colors: {
         gfg: {
           50: '#f0fdf4',

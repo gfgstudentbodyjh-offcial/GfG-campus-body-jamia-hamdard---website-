@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ArrowRight, Sparkles, ChevronRight, Mail, Linkedin, Instagram, Github,
   ShieldCheck, Users, Palette, Calendar, Megaphone, Share2, Terminal,
-  Image as ImageIcon, Trophy, Code2
+  Image as ImageIcon, Trophy, Code2, Bell, Pin
 } from 'lucide-react';
+
+import api from '../../services/api';
 
 // Shared Single Source of Truth Data Modules
 import { MOCK_FACULTY } from '../../data/faculty';
@@ -47,10 +49,29 @@ export default function Home() {
     return getStartYear(b) - getStartYear(a);
   });
   const currentMantri = sortedMantris[0];
-
   const teamsList = MOCK_TEAMS;
-  const upcomingEvents = MOCK_EVENTS.filter((e) => e.isUpcoming !== false);
-  const pastEvents = MOCK_EVENTS.filter((e) => e.isUpcoming === false);
+
+  const [liveEvents, setLiveEvents] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
+
+  useEffect(() => {
+    const loadHomeData = async () => {
+      try {
+        const [evRes, annRes] = await Promise.all([
+          api.get('/events'),
+          api.get('/announcements')
+        ]);
+        if (evRes.data?.data) setLiveEvents(evRes.data.data);
+        if (annRes.data?.data) setAnnouncements(annRes.data.data);
+      } catch (err) {
+        console.warn('Home data fetch error:', err);
+      }
+    };
+    loadHomeData();
+  }, []);
+
+  const upcomingEvents = (liveEvents.length > 0 ? liveEvents : MOCK_EVENTS).filter((e) => e.status !== 'Completed');
+  const pastEvents = (liveEvents.length > 0 ? liveEvents : MOCK_EVENTS).filter((e) => e.status === 'Completed');
   const galleryList = MOCK_GALLERY;
 
   const latestAnnouncementEvent = upcomingEvents[0] || MOCK_EVENTS[0];
@@ -65,7 +86,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0d12] text-gray-100 flex flex-col font-sans overflow-x-hidden">
+    <div className="min-h-screen bg-transparent text-gray-100 flex flex-col font-sans overflow-x-hidden">
       <Navbar />
 
       <main className="flex-1">
@@ -331,7 +352,7 @@ export default function Home() {
               {upcomingEvents.map((ev) => (
                 <TechCard
                   key={ev._id}
-                  className="w-[84vw] sm:w-88 flex-shrink-0 snap-start border-[#30363d] hover:border-[#2f9e44] flex flex-col justify-between group bg-[#121721] shadow-xl"
+                  className="w-[84vw] sm:w-[350px] flex-shrink-0 snap-start border-[#30363d] hover:border-[#2f9e44] flex flex-col justify-between group bg-[#121721] shadow-xl"
                 >
                   <div>
                     <div className="h-36 sm:h-44 relative overflow-hidden">
@@ -388,7 +409,7 @@ export default function Home() {
               {pastEvents.map((ev) => (
                 <TechCard
                   key={ev._id}
-                  className="w-[84vw] sm:w-88 flex-shrink-0 snap-start p-5 sm:p-6 bg-[#0a0d12] flex flex-col justify-between space-y-3 sm:space-y-4 shadow-xl"
+                  className="w-[84vw] sm:w-[350px] flex-shrink-0 snap-start p-5 sm:p-6 bg-[#0a0d12] flex flex-col justify-between space-y-3 sm:space-y-4 shadow-xl"
                 >
                   <div className="space-y-1.5 sm:space-y-2">
                     <span className="text-[9px] sm:text-[10px] font-mono uppercase font-bold text-gray-400 bg-[#18202c] px-2.5 py-0.5 rounded border border-[#30363d] inline-block">

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Footer from '../../components/common/Footer';
 import api from '../../services/api';
+import { MOCK_TEAMS } from '../../data/teams';
 import { MOCK_FACULTY } from '../../data/faculty';
 import { Users, Code2, Palette, Calendar, Megaphone, Share2, Mail, Linkedin, Github, Instagram, Award, GraduationCap } from 'lucide-react';
 import TechHeader from '../../components/common/TechHeader';
@@ -24,14 +25,30 @@ export default function TeamsPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [teamsRes, facultyRes] = await Promise.all([
-          api.get('/teams'),
-          api.get('/faculty').catch(() => ({ data: { data: MOCK_FACULTY } }))
-        ]);
-        setTeams(teamsRes.data.data || []);
-        setFaculty(facultyRes.data?.data?.length ? facultyRes.data.data : MOCK_FACULTY);
+        // Teams: use API if available, ALWAYS fallback to MOCK_TEAMS (GFG-CMP-Content)
+        let teamsData = MOCK_TEAMS;
+        try {
+          const teamsRes = await api.get('/teams');
+          if (teamsRes.data?.data?.length > 0) {
+            teamsData = teamsRes.data.data;
+          }
+        } catch { /* API unavailable — use frontend content */ }
+
+        // Faculty: same pattern
+        let facultyData = MOCK_FACULTY;
+        try {
+          const facultyRes = await api.get('/faculty');
+          if (facultyRes.data?.data?.length > 0) {
+            facultyData = facultyRes.data.data;
+          }
+        } catch { /* API unavailable — use frontend content */ }
+
+        setTeams(teamsData);
+        setFaculty(facultyData);
       } catch (err) {
         console.warn('Failed fetching teams data:', err);
+        setTeams(MOCK_TEAMS);
+        setFaculty(MOCK_FACULTY);
       }
       setLoading(false);
     };
@@ -39,7 +56,7 @@ export default function TeamsPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#0a0d12] text-gray-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-transparent text-gray-100 flex flex-col font-sans">
       <Navbar />
       <main className="flex-1 py-8 sm:py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full space-y-8 sm:space-y-12">
         
@@ -160,35 +177,35 @@ export default function TeamsPage() {
                       </div>
                     </div>
 
-                    {/* Member Cards (Lead & Co-Lead Paired 2-Col Grid on Mobile) */}
+                    {/* Member Cards (Lead & Co-Lead Paired Grid) */}
                     <div className={coLead ? "grid grid-cols-2 gap-3 sm:gap-6" : "grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6"}>
                       {lead && (
-                        <div className="bg-[#0a0d12] p-3.5 sm:p-6 rounded-2xl border border-[#2f9e44]/40 space-y-2.5 sm:space-y-4 flex flex-col justify-between tech-corner">
-                          <div className="space-y-2.5">
+                        <div className="bg-[#0a0d12] p-3.5 sm:p-6 rounded-2xl border border-[#2f9e44]/40 flex flex-col justify-between tech-corner space-y-3">
+                          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-3 sm:gap-5">
                             <img
                               src={lead.photo}
                               alt={`${lead.name}, ${lead.title || 'Lead'}`}
                               loading="lazy"
                               style={{ objectPosition: lead.imagePosition || 'top' }}
-                              className="w-full h-40 sm:h-44 rounded-xl object-cover border-2 border-[#2f9e44] flex-shrink-0 shadow-md"
+                              className="w-full h-36 sm:w-36 sm:h-44 rounded-xl object-cover border-2 border-[#2f9e44] flex-shrink-0 shadow-md"
                             />
-                            <div className="space-y-1 min-w-0">
+                            <div className="space-y-2 text-center sm:text-left min-w-0 w-full flex-1">
                               <span className="text-[9px] sm:text-[10px] font-mono font-bold uppercase tracking-wider text-white bg-[#2f9e44] px-2 py-0.5 rounded inline-block">
                                 {lead.title || 'Lead'}
                               </span>
                               <h4 className="font-bold text-white text-xs sm:text-lg leading-tight truncate">{lead.name}</h4>
-                            </div>
 
-                            {lead.message && (
-                              <p className="text-[10px] sm:text-xs text-gray-300 italic leading-relaxed pt-1.5 border-t border-[#30363d]/60 line-clamp-3 sm:line-clamp-none">
-                                "{lead.message}"
-                              </p>
-                            )}
+                              {lead.message && (
+                                <p className="text-[10px] sm:text-xs text-gray-300 italic leading-relaxed pt-1.5 border-t border-[#30363d]/60 line-clamp-3 sm:line-clamp-none">
+                                  "{lead.message}"
+                                </p>
+                              )}
+                            </div>
                           </div>
 
                           {/* Social Links */}
                           {lead.socials && (
-                            <div className="flex flex-wrap gap-1.5 sm:gap-2 pt-2 border-t border-[#30363d]">
+                            <div className="flex flex-wrap justify-center sm:justify-start gap-1.5 sm:gap-2 pt-2 border-t border-[#30363d]">
                               {lead.socials.email && (
                                 <a href={`mailto:${lead.socials.email}`} target="_blank" rel="noreferrer" className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-[#2f9e44] transition-colors border border-[#30363d]" title="Email">
                                   <Mail className="w-3.5 h-3.5" />
@@ -215,32 +232,32 @@ export default function TeamsPage() {
                       )}
 
                       {coLead && (
-                        <div className="bg-[#0a0d12] p-3.5 sm:p-6 rounded-2xl border border-[#30363d] space-y-2.5 sm:space-y-4 flex flex-col justify-between tech-corner">
-                          <div className="space-y-2.5">
+                        <div className="bg-[#0a0d12] p-3.5 sm:p-6 rounded-2xl border border-[#30363d] flex flex-col justify-between tech-corner space-y-3">
+                          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-3 sm:gap-5">
                             <img
                               src={coLead.photo}
                               alt={`${coLead.name}, ${coLead.title || 'Co-Lead'}`}
                               loading="lazy"
                               style={{ objectPosition: coLead.imagePosition || 'top' }}
-                              className="w-full h-40 sm:h-44 rounded-xl object-cover border-2 border-[#30363d] flex-shrink-0 shadow-md"
+                              className="w-full h-36 sm:w-36 sm:h-44 rounded-xl object-cover border-2 border-[#30363d] flex-shrink-0 shadow-md"
                             />
-                            <div className="space-y-1 min-w-0">
+                            <div className="space-y-2 text-center sm:text-left min-w-0 w-full flex-1">
                               <span className="text-[9px] sm:text-[10px] font-mono font-bold uppercase tracking-wider text-gray-300 bg-[#18202c] border border-[#30363d] px-2 py-0.5 rounded inline-block">
                                 {coLead.title || 'Co-Lead'}
                               </span>
                               <h4 className="font-bold text-white text-xs sm:text-lg leading-tight truncate">{coLead.name}</h4>
-                            </div>
 
-                            {coLead.message && (
-                              <p className="text-[10px] sm:text-xs text-gray-300 italic leading-relaxed pt-1.5 border-t border-[#30363d]/60 line-clamp-3 sm:line-clamp-none">
-                                "{coLead.message}"
-                              </p>
-                            )}
+                              {coLead.message && (
+                                <p className="text-[10px] sm:text-xs text-gray-300 italic leading-relaxed pt-1.5 border-t border-[#30363d]/60 line-clamp-3 sm:line-clamp-none">
+                                  "{coLead.message}"
+                                </p>
+                              )}
+                            </div>
                           </div>
 
                           {/* Social Links */}
                           {coLead.socials && (
-                            <div className="flex flex-wrap gap-1.5 sm:gap-2 pt-2 border-t border-[#30363d]">
+                            <div className="flex flex-wrap justify-center sm:justify-start gap-1.5 sm:gap-2 pt-2 border-t border-[#30363d]">
                               {coLead.socials.email && (
                                 <a href={`mailto:${coLead.socials.email}`} target="_blank" rel="noreferrer" className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-[#2f9e44] transition-colors border border-[#30363d]" title="Email">
                                   <Mail className="w-3.5 h-3.5" />

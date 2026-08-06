@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Code2, Github, Linkedin, Instagram, Youtube, Mail, Heart, ExternalLink, Terminal } from 'lucide-react';
+import { Code2, Linkedin, Instagram, Mail, Heart, ExternalLink, Terminal } from 'lucide-react';
 
 export default function Footer() {
   return (
@@ -24,17 +24,14 @@ export default function Footer() {
               Official GeeksforGeeks Student Chapter Community Management Platform for Jamia Hamdard. Fully data-driven Community OS.
             </p>
             <div className="flex items-center gap-3 pt-2">
-              <a href="https://github.com" target="_blank" rel="noreferrer" className="w-9 h-9 rounded-lg bg-[#21262d] flex items-center justify-center text-gray-300 hover:text-white hover:bg-[#30363d] transition-all">
-                <Github className="w-4 h-4" />
-              </a>
-              <a href="https://linkedin.com" target="_blank" rel="noreferrer" className="w-9 h-9 rounded-lg bg-[#21262d] flex items-center justify-center text-gray-300 hover:text-white hover:bg-[#30363d] transition-all">
-                <Linkedin className="w-4 h-4" />
-              </a>
-              <a href="https://instagram.com" target="_blank" rel="noreferrer" className="w-9 h-9 rounded-lg bg-[#21262d] flex items-center justify-center text-gray-300 hover:text-white hover:bg-[#30363d] transition-all">
+              <a href="https://www.instagram.com/geeksforgeeks.jh" target="_blank" rel="noreferrer" className="w-9 h-9 rounded-lg bg-[#21262d] flex items-center justify-center text-gray-300 hover:text-white hover:bg-[#30363d] transition-all">
                 <Instagram className="w-4 h-4" />
               </a>
-              <a href="https://youtube.com" target="_blank" rel="noreferrer" className="w-9 h-9 rounded-lg bg-[#21262d] flex items-center justify-center text-gray-300 hover:text-white hover:bg-[#30363d] transition-all">
-                <Youtube className="w-4 h-4" />
+              <a href="https://x.com/gfg__jh" target="_blank" rel="noreferrer" className="w-9 h-9 rounded-lg bg-[#21262d] flex items-center justify-center text-gray-300 hover:text-white hover:bg-[#30363d] transition-all" aria-label="X (Twitter)">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+              </a>
+              <a href="https://www.linkedin.com/company/geeksforgeeks-student-body-jamia-hamdard" target="_blank" rel="noreferrer" className="w-9 h-9 rounded-lg bg-[#21262d] flex items-center justify-center text-gray-300 hover:text-white hover:bg-[#30363d] transition-all">
+                <Linkedin className="w-4 h-4" />
               </a>
             </div>
           </div>
@@ -68,7 +65,7 @@ export default function Footer() {
             <div className="space-y-3 text-sm">
               <div className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-[#2f9e44]" />
-                <a href="mailto:gfg.chapter@jamiahamdard.ac.in" className="hover:text-white">gfg.chapter@jamiahamdard.ac.in</a>
+                <a href="mailto:gfgstudentbody.jh@gmail.com" className="hover:text-white">gfgstudentbody.jh@gmail.com</a>
               </div>
               <p className="text-xs text-gray-500">
                 Official student developer community portal at Jamia Hamdard, New Delhi.
