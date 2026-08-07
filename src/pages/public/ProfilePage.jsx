@@ -9,6 +9,7 @@ import TechCard from '../../components/common/TechCard';
 import TechHeader from '../../components/common/TechHeader';
 import ChangePasswordModal from '../../components/common/ChangePasswordModal';
 import { useAuth } from '../../context/AuthContext';
+import { resolveAvatarUrl, isValidMediaUrl, getValidMediaUrl } from '../../utils/mediaResolver';
 import {
   User, Edit3, Github, Linkedin, Globe, Instagram, Plus, X,
   Bookmark, MessageSquare, ShieldCheck, Heart, Trash2, CheckCircle2,
@@ -53,6 +54,11 @@ export default function ProfilePage() {
   const coverInputRef = useRef(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+
+  // onError fallback state for rendered images
+  const [avatarError, setAvatarError] = useState(false);
+  const [coverError, setCoverError] = useState(false);
 
   // Activity Tabs Data
   const [userPosts, setUserPosts] = useState([]);
@@ -66,52 +72,68 @@ export default function ProfilePage() {
   const handlePhotoImageSelect = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    const localUrl = URL.createObjectURL(file);
-    setEditForm(prev => ({ ...prev, photo: localUrl }));
+    setUploadError('');
     setIsUploadingPhoto(true);
 
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('type', 'image');
+      formData.append('folder', 'Members');
       const res = await api.post('/media/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      if (res.data?.url) {
-        setEditForm(prev => ({ ...prev, photo: res.data.url }));
+      // Cloudinary source of truth: only update state when a real HTTPS URL is returned
+      const cloudUrl = res.data?.media?.url || res.data?.data?.url || res.data?.url;
+      if (cloudUrl && cloudUrl.startsWith('http')) {
+        const publicId = res.data?.media?.publicId || res.data?.data?.publicId || '';
+        setEditForm(prev => ({ ...prev, photo: cloudUrl, photoPublicId: publicId }));
+        setAvatarError(false);
+      } else {
+        throw new Error('Upload succeeded but returned an invalid URL.');
       }
     } catch (err) {
-      console.warn('Background avatar upload using local preview:', err);
+      const msg = err.response?.data?.message || err.message || 'Avatar upload failed.';
+      setUploadError(`Avatar upload failed: ${msg}`);
+      console.error('[ProfilePage] Avatar upload error:', err);
+      // Preserve existing photo — do not mutate state with blob URL
     } finally {
       setIsUploadingPhoto(false);
+      if (photoInputRef.current) photoInputRef.current.value = '';
     }
   };
 
   const handleCoverImageSelect = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    const localUrl = URL.createObjectURL(file);
-    setEditForm(prev => ({ ...prev, coverPhoto: localUrl }));
+    setUploadError('');
     setIsUploadingCover(true);
 
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('type', 'image');
+      formData.append('folder', 'Members');
       const res = await api.post('/media/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      if (res.data?.url) {
-        setEditForm(prev => ({ ...prev, coverPhoto: res.data.url }));
+      // Cloudinary source of truth: only update state when a real HTTPS URL is returned
+      const cloudUrl = res.data?.media?.url || res.data?.data?.url || res.data?.url;
+      if (cloudUrl && cloudUrl.startsWith('http')) {
+        const publicId = res.data?.media?.publicId || res.data?.data?.publicId || '';
+        setEditForm(prev => ({ ...prev, coverPhoto: cloudUrl, coverPhotoPublicId: publicId }));
+        setCoverError(false);
+      } else {
+        throw new Error('Upload succeeded but returned an invalid URL.');
       }
     } catch (err) {
-      console.warn('Background cover upload using local preview:', err);
+      const msg = err.response?.data?.message || err.message || 'Cover upload failed.';
+      setUploadError(`Cover upload failed: ${msg}`);
+      console.error('[ProfilePage] Cover upload error:', err);
+      // Preserve existing cover — do not mutate state
     } finally {
       setIsUploadingCover(false);
+      if (coverInputRef.current) coverInputRef.current.value = '';
     }
   };
 
@@ -295,13 +317,18 @@ export default function ProfilePage() {
               
               {/* Optional Cover Banner */}
               <div className="h-36 sm:h-48 w-full bg-gradient-to-r from-[#18202c] via-[#121721] to-[#1e1338] relative">
-                {profile.coverPhoto && (
-                  <img src={profile.coverPhoto} alt="Cover" className="w-full h-full object-cover opacity-60" />
+                {isValidMediaUrl(profile.coverPhoto) && !coverError && (
+                  <img
+                    src={profile.coverPhoto}
+                    alt="Cover"
+                    className="w-full h-full object-cover opacity-60"
+                    onError={() => setCoverError(true)}
+                  />
                 )}
                 {isOwner && (
                   <button
                     onClick={() => setIsEditing(true)}
-                    className="absolute top-4 right-4 px-3 py-1.5 rounded-xl bg-black/60 hover:bg-black/80 text-white text-xs font-mono font-bold border border-[#30363d] backdrop-blur flex items-center gap-1.5 transition-colors"
+                    className="absolute top-4 right-4 px-3 py-1.5 rounded-xl bg-black/60 hover:bg-black/80 text-white text-xs font-mono font-bold border border-[#30363d] backdrop-blur hidden md:flex items-center gap-1.5 transition-colors"
                   >
                     <Edit3 className="w-3.5 h-3.5" /> Edit Profile
                   </button>
@@ -313,9 +340,10 @@ export default function ProfilePage() {
                 <div className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-4 text-center sm:text-left">
                   <div className="flex flex-col sm:flex-row items-center sm:items-end gap-5">
                     <img
-                      src={profile.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name)}&background=2f9e44&color=fff&bold=true`}
+                      src={avatarError ? resolveAvatarUrl('', profile.name) : resolveAvatarUrl(profile.photo, profile.name)}
                       alt={profile.name}
                       className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover border-4 border-[#2f9e44] bg-[#0a0d12] shadow-2xl"
+                      onError={() => setAvatarError(true)}
                     />
                     <div className="space-y-1.5">
                       <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
@@ -371,7 +399,7 @@ export default function ProfilePage() {
             </TechCard>
 
             {/* Profile Navigation Tabs */}
-            <div className="flex items-center gap-2 border-b border-[#30363d] pb-2 overflow-x-auto">
+            <div className="flex items-center gap-2 border-b border-[#30363d] pb-2 overflow-x-auto no-scrollbar snap-x">
               <button
                 onClick={() => setActiveTab('overview')}
                 className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all whitespace-nowrap ${
@@ -617,6 +645,13 @@ export default function ProfilePage() {
         {isEditing && (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
             <TechCard className="w-full max-w-2xl p-6 sm:p-8 bg-[#121721] border-[#2f9e44] space-y-6 max-h-[90vh] overflow-y-auto">
+              {/* Upload Error Banner */}
+              {uploadError && (
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-mono">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>{uploadError}</span>
+                </div>
+              )}
               
               <div className="flex items-center justify-between border-b border-[#30363d] pb-4">
                 <h3 className="text-lg font-extrabold text-white flex items-center gap-2">
@@ -649,8 +684,13 @@ export default function ProfilePage() {
                 <div className="space-y-1.5">
                   <label className="text-xs font-mono font-bold text-gray-300">Cover Banner</label>
                   <div className="relative h-28 w-full rounded-2xl overflow-hidden border border-[#30363d] bg-[#0a0d12] group">
-                    {editForm.coverPhoto ? (
-                      <img src={editForm.coverPhoto} alt="Cover Preview" className="w-full h-full object-cover" />
+                    {isValidMediaUrl(editForm.coverPhoto) ? (
+                      <img
+                        src={editForm.coverPhoto}
+                        alt="Cover Preview"
+                        className="w-full h-full object-cover"
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
                     ) : (
                       <div className="w-full h-full bg-gradient-to-r from-[#18202c] via-[#121721] to-[#1e1338] flex items-center justify-center text-xs font-mono text-gray-500">
                         Default Platform Cover Banner
@@ -690,12 +730,13 @@ export default function ProfilePage() {
                   <div className="flex items-center gap-4">
                     <div
                       className="relative group cursor-pointer flex-shrink-0"
-                      onClick={() => photoInputRef.current?.click()}
+                      onClick={() => !isUploadingPhoto && photoInputRef.current?.click()}
                     >
                       <img
-                        src={editForm.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name)}&background=2f9e44&color=fff&bold=true`}
+                        src={resolveAvatarUrl(editForm.photo, profile.name)}
                         alt="Avatar Preview"
                         className="w-20 h-20 rounded-2xl object-cover border-2 border-[#2f9e44] shadow-md"
+                        onError={(e) => { e.target.src = resolveAvatarUrl('', profile.name); }}
                       />
                       <div className="absolute inset-0 bg-black/50 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
                         <Camera className="w-6 h-6" />

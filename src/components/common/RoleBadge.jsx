@@ -22,9 +22,9 @@ export default function RoleBadge({ role = 'Member', className = '' }) {
   }
 
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border ${colorClasses} ${className}`}>
+    <span className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${colorClasses} ${className}`}>
       <Icon className="w-3 h-3 flex-shrink-0" />
-      <span>{normalized}</span>
+      <span className="whitespace-nowrap">{normalized}</span>
     </span>
   );
 }

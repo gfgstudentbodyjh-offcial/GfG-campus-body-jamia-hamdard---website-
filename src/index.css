@@ -47,6 +47,15 @@
   background: #30363d;
 }
 
+/* Hide scrollbar visually while keeping scroll functionality */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* ─── Infinite Marquee Animations ───────────────────────────────────────────── */
 @keyframes marquee-left {
   0% { transform: translate3d(0, 0, 0); }

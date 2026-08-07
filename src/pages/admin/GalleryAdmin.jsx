@@ -17,8 +17,10 @@ export default function GalleryAdmin() {
 
   // File Input Ref for native multi-image picker
   const multiFileInputRef = useRef(null);
+  const singleFileInputRef = useRef(null);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [targetAlbum, setTargetAlbum] = useState('Campus Activities');
 
   const albums = ['All', 'Event Gallery', 'Community Gallery', 'Hackathons', 'Workshops', 'Meetups', 'Campus Activities'];
@@ -56,11 +58,43 @@ export default function GalleryAdmin() {
     );
   });
 
+  const handleSinglePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingPhoto(true);
+
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      body.append('folder', 'Gallery');
+
+      const res = await api.post('/media/upload', body, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      const cloudUrl = res.data?.media?.url || res.data?.data?.url || res.data?.url;
+      const cloudPublicId = res.data?.media?.publicId || res.data?.data?.publicId || '';
+
+      if (cloudUrl && cloudUrl.startsWith('http')) {
+        setFormData(prev => ({ ...prev, url: cloudUrl, publicId: cloudPublicId }));
+      } else {
+        throw new Error('Upload failed');
+      }
+    } catch (err) {
+      console.warn('Photo upload error:', err);
+      alert('Photo upload failed. Please try again.');
+    } finally {
+      setIsUploadingPhoto(false);
+      if (singleFileInputRef.current) singleFileInputRef.current.value = '';
+    }
+  };
+
   const handleOpenAdd = () => {
     setFormData({
       _id: '',
       title: '',
-      url: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=800&q=80',
+      url: '',
+      publicId: '',
       album: 'Campus Activities',
       category: 'Workshops',
       isFeatured: true
@@ -73,6 +107,7 @@ export default function GalleryAdmin() {
       _id: g._id,
       title: g.title || '',
       url: g.url || '',
+      publicId: g.publicId || '',
       album: g.album || 'Campus Activities',
       category: g.category || 'Workshops',
       isFeatured: g.isFeatured || false
@@ -82,16 +117,23 @@ export default function GalleryAdmin() {
 
   const handleSaveItem = async (e) => {
     e.preventDefault();
+    if (!formData.url) {
+      alert('Please upload a photo from your device or enter an image URL.');
+      return;
+    }
     try {
+      const payload = { ...formData };
+      if (!payload._id) delete payload._id;
+
       if (formData._id) {
-        await api.put(`/gallery/${formData._id}`, formData);
+        await api.put(`/gallery/${formData._id}`, payload);
       } else {
-        await api.post('/gallery', formData);
+        await api.post('/gallery', payload);
       }
       setIsModalOpen(false);
       loadItems();
     } catch (err) {
-      alert('Save failed');
+      alert('Save failed: ' + (err.response?.data?.message || err.message));
     }
   };
 
@@ -117,51 +159,80 @@ export default function GalleryAdmin() {
     try {
       // 1. Upload files to backend media API
       const uploadedDocs = [];
+      let successCount = 0;
+
       for (const item of selectedFiles) {
-        const body = new FormData();
-        body.append('file', item.file);
-        body.append('type', 'image');
+        try {
+          const body = new FormData();
+          body.append('file', item.file);
+          body.append('folder', 'Gallery');
 
-        const res = await api.post('/media/upload', body, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        });
+          const res = await api.post('/media/upload', body, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
 
-        const imgUrl = res.data?.url || item.preview;
-        uploadedDocs.push({
-          title: item.name.replace(/\.[^/.]+$/, ''),
-          url: imgUrl,
-          album: targetAlbum,
-          category: 'Community',
-          isFeatured: true
-        });
+          const imgUrl = res.data?.media?.url || res.data?.data?.url || res.data?.url;
+          const publicId = res.data?.media?.publicId || res.data?.data?.publicId || '';
+
+          if (imgUrl && imgUrl.startsWith('http')) {
+            uploadedDocs.push({
+              title: item.name.replace(/\.[^/.]+$/, ''),
+              url: imgUrl,
+              publicId,
+              album: targetAlbum,
+              category: 'Community',
+              isFeatured: true
+            });
+            successCount++;
+          }
+        } catch (fileErr) {
+          console.error(`Failed to upload ${item.name}:`, fileErr);
+        }
       }
 
       // 2. Insert batch gallery documents
-      await api.post('/gallery/batch', { items: uploadedDocs });
-      alert(`Successfully uploaded ${uploadedDocs.length} photos to "${targetAlbum}" album!`);
-      setSelectedFiles([]);
-      setIsUploadModalOpen(false);
-      loadItems();
+      if (uploadedDocs.length > 0) {
+        await api.post('/gallery/batch', { items: uploadedDocs });
+        setIsUploadModalOpen(false);
+        setSelectedFiles([]);
+        loadItems();
+      } else {
+        alert('Batch upload failed. No images were uploaded.');
+      }
     } catch (err) {
-      alert('Batch upload error: ' + (err.response?.data?.message || err.message));
+      alert('Batch upload failed: ' + (err.message || 'Unknown error'));
     } finally {
       setUploadProgress(false);
     }
   };
 
   const handleDelete = async (id) => {
+    const isLegacy = typeof id === 'string' && id.startsWith('gal_');
+    if (isLegacy) {
+      alert('Legacy historical gallery items are protected and cannot be deleted.');
+      return;
+    }
     if (!window.confirm('Delete gallery photo permanently?')) return;
     try {
       await api.delete(`/gallery/${id}`);
       loadItems();
     } catch (err) {
-      alert('Delete failed');
+      alert(err.response?.data?.message || err.message || 'Delete failed');
     }
   };
 
   return (
     <div className="space-y-6">
       
+      {/* Native Single-File Picker Hidden */}
+      <input
+        type="file"
+        ref={singleFileInputRef}
+        className="hidden"
+        accept="image/jpeg,image/png,image/webp"
+        onChange={handleSinglePhotoUpload}
+      />
+
       {/* Native Multi-File Picker Hidden */}
       <input
         type="file"
@@ -332,8 +403,63 @@ export default function GalleryAdmin() {
             </div>
 
             <form onSubmit={handleSaveItem} className="space-y-4 text-xs font-medium">
+              {/* Photo Upload Area */}
               <div>
-                <label className={`block font-semibold mb-1 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>Asset Caption Title</label>
+                <label className={`block font-semibold mb-1 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                  Gallery Photo <span className="text-red-400">*</span>
+                </label>
+                {formData.url ? (
+                  <div className="relative rounded-2xl overflow-hidden border border-[#30363d] aspect-video group bg-black/40">
+                    <img src={formData.url} alt="Gallery Asset" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-3 transition-opacity">
+                      <button
+                        type="button"
+                        onClick={() => singleFileInputRef.current?.click()}
+                        className="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold backdrop-blur-md transition-colors"
+                      >
+                        Change Photo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, url: '', publicId: '' })}
+                        className="px-3 py-1.5 rounded-xl bg-red-600/80 hover:bg-red-600 text-white text-xs font-bold transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => singleFileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-colors ${
+                      isLight ? 'border-gray-300 bg-slate-50 hover:border-[#2f9e44]' : 'border-[#30363d] bg-[#0d1117] hover:border-[#2f9e44]'
+                    }`}
+                  >
+                    <Camera className="w-8 h-8 text-[#2f9e44] mx-auto mb-2" />
+                    <p className={`text-xs font-bold ${isLight ? 'text-gray-900' : 'text-white'}`}>
+                      {isUploadingPhoto ? 'Uploading to Cloudinary...' : 'Click to Upload Photo from Device'}
+                    </p>
+                    <p className={`text-[10px] mt-0.5 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>PNG, JPG, WEBP up to 10MB</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Direct Image URL fallback */}
+              <div>
+                <label className={`block font-semibold mb-1 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>Or Paste Direct Image URL</label>
+                <input
+                  type="text"
+                  value={formData.url}
+                  onChange={e => setFormData({ ...formData, url: e.target.value })}
+                  placeholder="https://..."
+                  className={`w-full rounded-xl px-3 py-2 border text-xs font-medium focus:outline-none focus:border-[#2f9e44] ${
+                    isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#0d1117] border-[#30363d] text-white'
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className={`block font-semibold mb-1 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>Asset Caption Title <span className="text-red-400">*</span></label>
                 <input
                   type="text"
                   required
@@ -372,8 +498,12 @@ export default function GalleryAdmin() {
                 </label>
               </div>
 
-              <button type="submit" className="w-full py-3 rounded-xl gradient-button font-bold text-xs shadow-lg">
-                Save Photo Details
+              <button
+                type="submit"
+                disabled={isUploadingPhoto}
+                className="w-full py-3 rounded-xl gradient-button font-bold text-xs shadow-lg disabled:opacity-50"
+              >
+                {isUploadingPhoto ? 'Uploading Photo...' : 'Save Photo Details'}
               </button>
             </form>
           </div>

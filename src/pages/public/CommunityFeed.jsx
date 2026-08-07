@@ -14,6 +14,7 @@ import InCampusPromo from '../../components/common/InCampusPromo';
 import RoleBadge from '../../components/common/RoleBadge';
 import ContentActionMenu from '../../components/common/ContentActionMenu';
 import ReportModal from '../../components/common/ReportModal';
+import { isValidMediaUrl, resolveAvatarUrl } from '../../utils/mediaResolver';
 
 import { useAuth } from '../../context/AuthContext';
 
@@ -57,9 +58,38 @@ export default function CommunityFeed() {
   // Logged-in member identity
   const currentMemberId = authMember?._id || user?.id || 'm_saquib';
 
-  // Toast & Report State
+  // Toast, Delete Post & Report State
   const [toastMessage, setToastMessage] = useState('');
   const [reportingTarget, setReportingTarget] = useState(null);
+  const [postToDelete, setPostToDelete] = useState(null);
+  const [isDeletingPost, setIsDeletingPost] = useState(false);
+
+  const handleDeleteOwnPost = (postId) => {
+    const targetPost = posts.find(p => p._id === postId);
+    if (targetPost) {
+      setPostToDelete(targetPost);
+    }
+  };
+
+  const confirmDeletePost = async () => {
+    if (!postToDelete) return;
+    setIsDeletingPost(true);
+    try {
+      const res = await api.delete(`/posts/${postToDelete._id}`);
+      if (res.data?.success) {
+        setPosts(prev => prev.filter(p => p._id !== postToDelete._id));
+        showToast('Post deleted permanently.');
+      } else {
+        alert(res.data?.message || 'Failed to delete post');
+      }
+    } catch (err) {
+      console.error('Delete post error:', err);
+      alert(err.response?.data?.message || 'Failed to delete post.');
+    } finally {
+      setIsDeletingPost(false);
+      setPostToDelete(null);
+    }
+  };
 
   const categories = [
     { name: 'All', icon: Sparkles },
@@ -142,10 +172,18 @@ export default function CommunityFeed() {
       });
       setUploadProgress(100);
 
+      // Cloudinary source of truth: extract from normalized media field first
+      const cloudUrl = res.data?.media?.url || res.data?.data?.url || res.data?.url;
+      const cloudPublicId = res.data?.media?.publicId || res.data?.data?.publicId || '';
+
+      if (!cloudUrl || !cloudUrl.startsWith('http')) {
+        throw new Error('Upload did not return a valid Cloudinary URL.');
+      }
+
       const mediaAsset = {
         type: detectedType,
-        url: res.data.data.url,
-        publicId: res.data.data.publicId,
+        url: cloudUrl,
+        publicId: cloudPublicId,
         fileName: file.name,
         mimeType: file.type,
         size: file.size
@@ -155,17 +193,12 @@ export default function CommunityFeed() {
       setIsUploading(false);
       showToast(`${detectedType.toUpperCase()} file uploaded successfully`);
     } catch (err) {
-      console.warn('Media upload failed, using fallback:', err);
-      // Local fallback url if server offline
-      setUploadedMedia({
-        type: detectedType,
-        url: localUrl,
-        publicId: `local_${Date.now()}`,
-        fileName: file.name,
-        mimeType: file.type,
-        size: file.size
-      });
+      console.error('[CommunityFeed] Media upload failed:', err);
+      // Production: do NOT fall back to blob URL — it cannot be stored in MongoDB
+      setUploadedMedia(null);
+      setFilePreviewUrl(null);
       setIsUploading(false);
+      showToast('Upload failed. Please try again.');
     }
   };
 
@@ -409,37 +442,42 @@ export default function CommunityFeed() {
           </aside>
 
           {/* ─── CENTER COLUMN (MAIN FEED STREAM) ─────────────────────────── */}
-          <section className="lg:col-span-6 w-full max-w-[740px] mx-auto space-y-6">
+          <section className="lg:col-span-6 w-full max-w-[740px] mx-auto space-y-4 sm:space-y-6">
             
             {/* Header */}
-            <div className="flex items-center justify-between pb-2 border-b border-[#30363d]">
-              <div>
-                <span className="text-[10px] font-mono text-[#2f9e44] uppercase tracking-wider font-bold block">
+            <div className="flex items-center justify-between pb-2 border-b border-[#30363d] gap-2">
+              <div className="min-w-0">
+                <span className="text-[10px] font-mono text-[#2f9e44] uppercase tracking-wider font-bold block truncate">
                   COMMUNITY NETWORK
                 </span>
-                <h1 className="text-xl sm:text-2xl font-extrabold text-white">Community Feed</h1>
+                <h1 className="text-lg sm:text-2xl font-extrabold text-white truncate">Community Feed</h1>
               </div>
 
               <button
                 onClick={() => setIsComposerOpen(true)}
-                className="px-4 py-2.5 rounded-xl gradient-button text-xs font-bold flex items-center gap-2 shadow-lg shadow-[#2f9e44]/25"
+                className="px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl gradient-button text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-[#2f9e44]/25 flex-shrink-0 cursor-pointer"
               >
-                <Plus className="w-4 h-4" /> Create Post
+                <Plus className="w-4 h-4" />
+                <span className="hidden sm:inline">+ Create Post</span>
+                <span className="sm:hidden">+ Post</span>
               </button>
             </div>
 
             {/* Create Post Entry Trigger */}
             <TechCard
               onClick={() => setIsComposerOpen(true)}
-              className="p-4 bg-[#121721] border-[#30363d] hover:border-[#2f9e44]/50 cursor-pointer transition-all space-y-3"
+              className="p-3.5 sm:p-4 bg-[#121721] border-[#30363d] hover:border-[#2f9e44]/50 cursor-pointer transition-all space-y-3"
             >
               <div className="flex items-center gap-3">
                 <img
-                  src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80"
+                  src={resolveAvatarUrl(authMember?.photo, authMember?.name || user?.username || 'Member')}
                   alt="Member avatar"
-                  className="w-10 h-10 rounded-full object-cover border border-[#2f9e44]"
+                  className="w-10 h-10 rounded-full object-cover border border-[#2f9e44] flex-shrink-0"
+                  onError={(e) => {
+                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(authMember?.name || user?.username || 'Member')}&background=2f9e44&color=fff&bold=true`;
+                  }}
                 />
-                <div className="flex-1 bg-[#0a0d12] border border-[#30363d] rounded-xl px-4 py-2.5 text-xs text-gray-400">
+                <div className="flex-1 bg-[#0a0d12] border border-[#30363d] rounded-xl px-3.5 py-2.5 text-xs text-gray-400 truncate">
                   Share something with the community...
                 </div>
               </div>
@@ -454,7 +492,7 @@ export default function CommunityFeed() {
                     setIsComposerOpen(true);
                     setTimeout(() => fileInputRef.current?.click(), 200);
                   }}
-                  className="flex items-center gap-1.5 hover:text-white px-2 py-1 rounded-lg hover:bg-[#18202c]"
+                  className="flex items-center gap-1.5 hover:text-white px-2 py-1.5 rounded-lg hover:bg-[#18202c] min-h-[44px] sm:min-h-0"
                 >
                   <ImageIcon className="w-4 h-4 text-[#2f9e44]" /> Photo
                 </button>
@@ -467,7 +505,7 @@ export default function CommunityFeed() {
                     setIsComposerOpen(true);
                     setTimeout(() => fileInputRef.current?.click(), 200);
                   }}
-                  className="flex items-center gap-1.5 hover:text-white px-2 py-1 rounded-lg hover:bg-[#18202c]"
+                  className="flex items-center gap-1.5 hover:text-white px-2 py-1.5 rounded-lg hover:bg-[#18202c] min-h-[44px] sm:min-h-0"
                 >
                   <FileText className="w-4 h-4 text-[#06b6d4]" /> PDF Note
                 </button>
@@ -479,7 +517,7 @@ export default function CommunityFeed() {
                     setPostType('Question');
                     setIsComposerOpen(true);
                   }}
-                  className="flex items-center gap-1.5 hover:text-white px-2 py-1 rounded-lg hover:bg-[#18202c]"
+                  className="flex items-center gap-1.5 hover:text-white px-2 py-1.5 rounded-lg hover:bg-[#18202c] min-h-[44px] sm:min-h-0"
                 >
                   <HelpCircle className="w-4 h-4 text-yellow-400" /> Question
                 </button>
@@ -488,7 +526,7 @@ export default function CommunityFeed() {
 
             {/* Category Filter Pills & Search */}
             <div className="space-y-3">
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth snap-x snap-proximity pb-1 pr-4 max-w-full">
                 {categories.map((cat) => {
                   const Icon = cat.icon;
                   const isSelected = typeFilter === cat.name;
@@ -496,7 +534,7 @@ export default function CommunityFeed() {
                     <button
                       key={cat.name}
                       onClick={() => setTypeFilter(cat.name)}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 flex-shrink-0 ${
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 flex-none snap-start ${
                         isSelected
                           ? 'bg-[#2f9e44] text-white shadow-md border border-[#2f9e44]'
                           : 'bg-[#121721] text-gray-400 hover:text-white border border-[#30363d]'
@@ -509,29 +547,29 @@ export default function CommunityFeed() {
                 })}
               </div>
 
-              {/* Search Bar */}
-              <div className="relative">
+              {/* Search Bar (100% width) */}
+              <div className="relative w-full">
                 <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
                   placeholder="Search posts, topics, or notes..."
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="w-full bg-[#121721] border border-[#30363d] rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#2f9e44]"
+                  className="w-full bg-[#121721] border border-[#30363d] rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#2f9e44]"
                 />
               </div>
             </div>
 
-            {/* Active Tag Filters */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar text-xs pb-1">
-              <span className="text-gray-500 font-mono font-bold flex-shrink-0">TAGS:</span>
+            {/* Active Tag Filters Horizontal Rail */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar text-xs pb-1 pr-4 max-w-full">
+              <span className="text-gray-500 font-mono font-bold flex-none">TAGS:</span>
               {popularTags.map(tag => {
                 const isSelected = selectedTag === tag;
                 return (
                   <button
                     key={tag}
                     onClick={() => setSelectedTag(tag)}
-                    className={`px-2.5 py-0.5 rounded-lg text-xs font-semibold whitespace-nowrap ${
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap flex-none ${
                       isSelected
                         ? 'bg-[#2f9e44]/20 text-[#2f9e44] border border-[#2f9e44]/40 font-bold'
                         : 'bg-[#121721] text-gray-400 hover:text-white border border-[#30363d]'
@@ -586,37 +624,40 @@ export default function CommunityFeed() {
                           </div>
                         )}
 
-                        {/* Author Header */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <Link to={`/profile`}>
+                        {/* Author Header — Mobile Responsive Layout */}
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            <Link to="/profile" className="flex-shrink-0">
                               <img
-                                src={post.authorRef?.photo || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'}
+                                src={resolveAvatarUrl(post.authorRef?.photo, post.authorRef?.name || 'Member')}
                                 alt={post.authorRef?.name || 'Member'}
-                                className="w-10 h-10 rounded-full object-cover border border-[#2f9e44]"
+                                className="w-10 h-10 min-w-[40px] min-h-[40px] aspect-square rounded-full object-cover border border-[#2f9e44] flex-shrink-0"
+                                onError={(e) => {
+                                  e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(post.authorRef?.name || 'Member')}&background=2f9e44&color=fff&bold=true`;
+                                }}
                               />
                             </Link>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <Link to={`/profile`} className="font-bold text-white text-sm hover:text-[#2f9e44] leading-snug">
+                            <div className="min-w-0 space-y-1 flex-1">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <Link to="/profile" className="font-bold text-white text-sm hover:text-[#2f9e44] leading-snug whitespace-nowrap truncate">
                                   {post.authorRef?.name || 'Community Member'}
                                 </Link>
                                 <RoleBadge role={post.authorRef?.role} />
                               </div>
-                              <p className="text-[10px] text-gray-400">
-                                {post.authorRef?.teamName || 'Technical'} • {new Date(post.createdAt).toLocaleDateString()}
+                              <p className="text-[10px] sm:text-[11px] text-gray-400 font-medium truncate">
+                                {post.authorRef?.teamName || 'General'} • {new Date(post.createdAt).toLocaleDateString()}
                               </p>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#18202c] text-[#2f9e44] border border-[#2f9e44]/30">
+                          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 pt-0.5">
+                            <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#18202c] text-[#2f9e44] border border-[#2f9e44]/30 whitespace-nowrap">
                               {post.postType}
                             </span>
                             <ContentActionMenu
                               targetType="post"
                               targetId={post._id}
-                              isOwner={post.authorRef?._id === currentMemberId}
+                              isOwner={String(post.authorRef?._id || post.authorRef) === String(currentMemberId) || user?.role === 'Super Admin'}
                               isBookmarked={post.isBookmarked}
                               onBookmark={() => handleBookmark(post._id)}
                               onDelete={() => handleDeleteOwnPost(post._id)}
@@ -662,7 +703,24 @@ export default function CommunityFeed() {
                           <div className="space-y-3">
                             {imageMedia.map((img, idx) => (
                               <div key={idx} className="rounded-xl overflow-hidden max-h-96 border border-[#30363d] bg-black/40">
-                                <img src={img.url} alt={img.fileName || 'Attachment'} className="w-full h-full object-cover max-h-96" />
+                                {isValidMediaUrl(img.url) ? (
+                                  <img
+                                    src={img.url}
+                                    alt={img.fileName || 'Attachment'}
+                                    className="w-full h-full object-cover max-h-96"
+                                    onError={(e) => {
+                                      e.target.style.display = 'none';
+                                      e.target.nextSibling && (e.target.nextSibling.style.display = 'flex');
+                                    }}
+                                  />
+                                ) : null}
+                                <div
+                                  className="hidden items-center justify-center h-24 text-xs font-mono text-gray-500 gap-2"
+                                  style={{ display: isValidMediaUrl(img.url) ? 'none' : 'flex' }}
+                                >
+                                  <ImageIcon className="w-4 h-4 text-gray-600" />
+                                  <span>Media unavailable</span>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -710,42 +768,43 @@ export default function CommunityFeed() {
                         )}
 
                         {/* Actions Footer */}
-                        <div className="pt-3 border-t border-[#30363d] flex items-center justify-between text-xs text-gray-400">
-                          <div className="flex items-center gap-5">
-                            <button
-                              onClick={() => handleLike(post._id)}
-                              className={`flex items-center gap-1.5 font-bold transition-colors ${
-                                post.isLiked ? 'text-red-400' : 'hover:text-red-400'
-                              }`}
-                            >
-                              <Heart className={`w-4 h-4 ${post.isLiked ? 'text-red-500 fill-red-500' : 'text-gray-400'}`} />
-                              <span>{post.likesCount || 0}</span>
-                            </button>
+                        <div className="pt-3 border-t border-[#30363d] grid grid-cols-4 sm:flex sm:items-center sm:justify-between text-xs text-gray-400 gap-1 sm:gap-6">
+                          <button
+                            onClick={() => handleLike(post._id)}
+                            className={`flex items-center justify-center sm:justify-start gap-1.5 font-bold transition-colors min-h-[44px] sm:min-h-0 ${
+                              post.isLiked ? 'text-red-400' : 'hover:text-red-400'
+                            }`}
+                          >
+                            <Heart className={`w-4 h-4 ${post.isLiked ? 'text-red-500 fill-red-500' : 'text-gray-400'}`} />
+                            <span>{post.likesCount || 0}</span>
+                          </button>
 
-                            <button
-                              onClick={() => handleOpenComments(post._id)}
-                              className="flex items-center gap-1.5 hover:text-white transition-colors font-medium"
-                            >
-                              <MessageSquare className="w-4 h-4 text-gray-400" />
-                              <span>{post.commentsCount || 0} Comments</span>
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => handleOpenComments(post._id)}
+                            className="flex items-center justify-center sm:justify-start gap-1.5 hover:text-white transition-colors font-medium min-h-[44px] sm:min-h-0"
+                          >
+                            <MessageSquare className="w-4 h-4 text-gray-400" />
+                            <span className="hidden sm:inline">{post.commentsCount || 0} Comments</span>
+                            <span className="sm:hidden">{post.commentsCount || 0}</span>
+                          </button>
 
-                          <div className="flex items-center gap-4">
-                            <button
-                              onClick={() => handleBookmark(post._id)}
-                              className={`flex items-center gap-1.5 font-bold transition-colors ${
-                                post.isBookmarked ? 'text-[#2f9e44]' : 'hover:text-[#2f9e44]'
-                              }`}
-                            >
-                              <Bookmark className={`w-4 h-4 ${post.isBookmarked ? 'text-[#2f9e44] fill-[#2f9e44]' : 'text-gray-400'}`} />
-                              <span>{post.bookmarksCount || 0}</span>
-                            </button>
+                          <button
+                            onClick={() => handleBookmark(post._id)}
+                            className={`flex items-center justify-center sm:justify-start gap-1.5 font-bold transition-colors min-h-[44px] sm:min-h-0 ${
+                              post.isBookmarked ? 'text-[#2f9e44]' : 'hover:text-[#2f9e44]'
+                            }`}
+                          >
+                            <Bookmark className={`w-4 h-4 ${post.isBookmarked ? 'text-[#2f9e44] fill-[#2f9e44]' : 'text-gray-400'}`} />
+                            <span>{post.bookmarksCount || 0}</span>
+                          </button>
 
-                            <button onClick={() => handleShare(post)} className="flex items-center gap-1.5 hover:text-white transition-colors font-medium">
-                              <Share2 className="w-4 h-4" />
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => handleShare(post)}
+                            className="flex items-center justify-center sm:justify-start gap-1.5 hover:text-white transition-colors font-medium min-h-[44px] sm:min-h-0"
+                          >
+                            <Share2 className="w-4 h-4 text-gray-400" />
+                            <span className="hidden sm:inline">Share</span>
+                          </button>
                         </div>
 
                         {/* Inline Threaded 2-Level Discussion Drawer */}
@@ -1119,6 +1178,49 @@ export default function CommunityFeed() {
               </button>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Post Confirmation Modal */}
+      {postToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#121721] border border-[#30363d] rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 text-red-400">
+              <Trash2 className="w-6 h-6 flex-shrink-0" />
+              <h3 className="text-lg font-bold text-white">Delete Post Permanently?</h3>
+            </div>
+            <p className="text-xs sm:text-sm text-gray-300 leading-relaxed">
+              Are you sure you want to delete <span className="font-semibold text-white">"{postToDelete.title || 'this post'}"</span>? This will permanently remove the post and its uploaded media. This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isDeletingPost}
+                onClick={() => setPostToDelete(null)}
+                className="px-4 py-2 text-xs font-bold text-gray-300 hover:text-white bg-[#18202c] hover:bg-[#30363d] rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingPost}
+                onClick={confirmDeletePost}
+                className="px-5 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-500 rounded-xl transition-colors flex items-center gap-2 shadow-lg shadow-red-600/30"
+              >
+                {isDeletingPost ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete Permanently
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

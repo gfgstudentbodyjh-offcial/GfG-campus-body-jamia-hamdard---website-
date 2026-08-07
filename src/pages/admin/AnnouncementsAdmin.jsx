@@ -32,7 +32,7 @@ export default function AnnouncementsAdmin() {
   const loadAnnouncements = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/announcements');
+      const res = await api.get('/announcements', { params: { scope: 'admin' } });
       setAnnouncements(res.data.data || []);
     } catch (err) {
       console.warn(err);
@@ -102,6 +102,16 @@ export default function AnnouncementsAdmin() {
     }
   };
 
+  const handleToggleStatus = async (id, currentStatus) => {
+    const newStatus = (currentStatus === 'Published' || currentStatus === 'Active') ? 'Draft' : 'Published';
+    try {
+      await api.put(`/announcements/${id}`, { status: newStatus });
+      loadAnnouncements();
+    } catch (err) {
+      alert('Failed to update status');
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!window.confirm('Delete announcement permanently?')) return;
     try {
@@ -122,7 +132,7 @@ export default function AnnouncementsAdmin() {
         onAdd={handleOpenAdd}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        columns={['Announcement Headline', 'Type & Link', 'Pin Status', 'Status', 'Actions']}
+        columns={['Announcement Headline', 'Type & Link', 'Pin Status', 'Publication Status', 'Actions']}
         renderRow={(a) => (
           <tr key={a._id} className={`transition-colors ${
             isLight ? 'hover:bg-slate-50/80 border-b border-gray-200' : 'hover:bg-[#0d1117]/60 border-b border-[#30363d]'
@@ -163,13 +173,17 @@ export default function AnnouncementsAdmin() {
               </button>
             </td>
             <td className="px-6 py-4 font-mono text-xs whitespace-nowrap">
-              <span className={`inline-block whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                a.status === 'Published' || a.status === 'Active'
-                  ? isLight ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-[#2f9e44]/20 text-[#2f9e44] border-[#2f9e44]/30'
-                  : isLight ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-gray-800 text-gray-400'
-              }`}>
-                {a.status || 'Published'}
-              </span>
+              <button
+                onClick={() => handleToggleStatus(a._id, a.status)}
+                title="Click to toggle Published / Unpublished"
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold border transition-colors cursor-pointer ${
+                  a.status === 'Published' || a.status === 'Active'
+                    ? isLight ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-[#2f9e44]/20 text-[#2f9e44] border-[#2f9e44]/30 hover:bg-[#2f9e44]/30'
+                    : isLight ? 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200' : 'bg-gray-800 text-gray-400 hover:text-white border-gray-700'
+                }`}
+              >
+                {a.status === 'Published' || a.status === 'Active' ? '● Published' : '○ Unpublished (Draft)'}
+              </button>
             </td>
             <td className="px-6 py-4 text-right space-x-2">
               <button

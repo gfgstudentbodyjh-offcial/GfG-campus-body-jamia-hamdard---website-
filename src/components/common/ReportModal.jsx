@@ -30,11 +30,10 @@ export default function ReportModal({ targetType, targetId, onClose, onSuccess }
 
     try {
       const res = await api.post('/reports', {
-        reporterId: currentMemberId,
         targetType,
-        targetId,
+        targetRef: targetId,
         reason: selectedReason,
-        details: selectedReason === 'Other' ? details : details
+        details: selectedReason === 'Other' ? details : (details || '')
       });
 
       if (res.data.success) {
@@ -45,7 +44,24 @@ export default function ReportModal({ targetType, targetId, onClose, onSuccess }
         }, 1800);
       }
     } catch (err) {
-      setErrorMessage(err.response?.data?.message || 'Couldn’t submit report. Please try again.');
+      const status = err.response?.status;
+      const serverMsg = err.response?.data?.message;
+
+      if (status === 401) {
+        setErrorMessage('Please sign in to report content.');
+      } else if (status === 403) {
+        setErrorMessage('Your account cannot perform this action.');
+      } else if (status === 404) {
+        setErrorMessage('This content no longer exists.');
+      } else if (status === 409) {
+        setErrorMessage("You've already reported this content.");
+      } else if (status === 429) {
+        setErrorMessage('Too many attempts. Please try again later.');
+      } else if (status === 500) {
+        setErrorMessage('Report service is temporarily unavailable.');
+      } else {
+        setErrorMessage(serverMsg || 'Couldn’t submit report. Please try again.');
+      }
     } finally {
       setSubmitting(false);
     }

@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import {
   ArrowRight, Sparkles, ChevronRight, Mail, Linkedin, Instagram, Github,
   ShieldCheck, Users, Palette, Calendar, Megaphone, Share2, Terminal,
-  Image as ImageIcon, Trophy, Code2, Bell, Pin
+  Image as ImageIcon, Trophy, Code2, Bell, Pin, CheckCircle2
 } from 'lucide-react';
 
 import api from '../../services/api';
@@ -74,7 +74,16 @@ export default function Home() {
   const pastEvents = (liveEvents.length > 0 ? liveEvents : MOCK_EVENTS).filter((e) => e.status === 'Completed');
   const galleryList = MOCK_GALLERY;
 
-  const latestAnnouncementEvent = upcomingEvents[0] || MOCK_EVENTS[0];
+  const now = new Date();
+  const isPublishedAndNotExpired = (a) => {
+    const isPub = a.status === 'Published' || a.status === 'Active' || !a.status;
+    const notExpired = !a.expiryDate && !a.expiresAt ? true : new Date(a.expiryDate || a.expiresAt) > now;
+    return isPub && notExpired;
+  };
+
+  const activeAnnouncements = announcements.filter(isPublishedAndNotExpired);
+  const pinnedAnnouncement = activeAnnouncements.find(a => a.isPinned);
+  const latestAnnouncement = activeAnnouncements[0];
 
   // Lightbox State
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -139,13 +148,52 @@ export default function Home() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.6, delay: 0.1 }}
-              className="lg:col-span-5 flex items-center justify-center"
+              className="hidden lg:flex lg:col-span-5 items-center justify-center"
             >
               <Hero3DVisual />
             </motion.div>
 
           </div>
         </section>
+
+        {/* ─── 1.5. TOP PINNED ANNOUNCEMENT STRIP (HERO AREA) ────────────────────── */}
+        {pinnedAnnouncement && (
+          <section className="bg-gradient-to-r from-[#0a0d12] via-[#142e16] to-[#0a0d12] border-y border-[#2f9e44]/40 py-3 px-4 sm:px-6 lg:px-8 shadow-xl relative z-20">
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3 text-center sm:text-left">
+                <span className="flex items-center gap-1.5 bg-[#2f9e44] text-white text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-full shadow-sm flex-shrink-0">
+                  <Pin className="w-3 h-3 fill-white" /> Pinned Bulletin
+                </span>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-bold text-white text-xs sm:text-sm line-clamp-1">
+                    {pinnedAnnouncement.title}
+                  </h4>
+                  <span className="hidden md:inline text-gray-300 text-xs truncate max-w-md">
+                    — {pinnedAnnouncement.description}
+                  </span>
+                </div>
+              </div>
+
+              {pinnedAnnouncement.linkUrl ? (
+                <a
+                  href={pinnedAnnouncement.linkUrl}
+                  target={pinnedAnnouncement.linkUrl.startsWith('http') ? '_blank' : '_self'}
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 font-bold text-xs text-[#2f9e44] hover:text-white flex-shrink-0 bg-white/10 hover:bg-[#2f9e44] px-3.5 py-1.5 rounded-lg border border-[#2f9e44]/40 transition-all shadow-sm"
+                >
+                  {pinnedAnnouncement.linkLabel || 'Apply Now'} <ArrowRight className="w-3.5 h-3.5" />
+                </a>
+              ) : (
+                <Link
+                  to="/community"
+                  className="flex items-center gap-1.5 font-bold text-xs text-[#2f9e44] hover:text-white flex-shrink-0 bg-white/10 hover:bg-[#2f9e44] px-3.5 py-1.5 rounded-lg border border-[#2f9e44]/40 transition-all shadow-sm"
+                >
+                  View Community <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* ─── 2. FACULTY COORDINATORS (STATIC) ───────────────────────────── */}
         <section className="py-12 bg-[#121721]/60 border-b border-[#30363d] px-4 sm:px-6 lg:px-8">
@@ -390,43 +438,84 @@ export default function Home() {
           </section>
         )}
 
-        {/* ─── 6. PAST EVENTS (DIGITAL ARCHIVE) ───────────────────────────── */}
+        {/* ─── 6. PAST EVENTS (DIGITAL ARCHIVE AUTO-SCROLL WITH THUMBNAILS) ── */}
         {pastEvents && pastEvents.length > 0 && (
           <section className="py-10 sm:py-12 bg-[#121721]/30 border-t border-[#30363d] px-4 sm:px-6 lg:px-8 space-y-6">
             <div className="max-w-7xl mx-auto flex items-center justify-between">
               <div>
                 <span className="tech-eyebrow">05 // DIGITAL ARCHIVE</span>
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-1">Past Events Archive</h2>
-                <p className="text-xs sm:text-sm text-gray-400 mt-0.5">Highlights from our successfully conducted sessions and workshops.</p>
+                <p className="text-xs sm:text-sm text-gray-400 mt-0.5">Highlights from our successfully conducted technical sessions and workshops.</p>
               </div>
               <Link to="/events" className="text-xs font-bold text-[#2f9e44] hover:underline flex items-center gap-1 flex-shrink-0">
                 Explore Past Events <ChevronRight className="w-4 h-4" />
               </Link>
             </div>
 
-            {/* Marquee Container: RIGHT → LEFT */}
-            <InfiniteMarquee direction="left" duration={40} gapClass="gap-4 sm:gap-6">
-              {pastEvents.map((ev) => (
-                <TechCard
-                  key={ev._id}
-                  className="w-[84vw] sm:w-[350px] flex-shrink-0 snap-start p-5 sm:p-6 bg-[#0a0d12] flex flex-col justify-between space-y-3 sm:space-y-4 shadow-xl"
-                >
-                  <div className="space-y-1.5 sm:space-y-2">
-                    <span className="text-[9px] sm:text-[10px] font-mono uppercase font-bold text-gray-400 bg-[#18202c] px-2.5 py-0.5 rounded border border-[#30363d] inline-block">
-                      {ev.category || 'Completed Session'}
-                    </span>
-                    <h3 className="text-sm sm:text-base font-bold text-white truncate">{ev.title}</h3>
-                    <p className="text-xs text-[#2f9e44] font-semibold">{ev.date}</p>
-                    {ev.speaker && (
-                      <p className="text-xs text-gray-300 font-medium truncate">Speaker: {ev.speaker}</p>
-                    )}
-                  </div>
+            {/* Auto-Scroll Marquee Container: RIGHT → LEFT */}
+            <InfiniteMarquee direction="left" duration={35} gapClass="gap-4 sm:gap-6">
+              {pastEvents.map((ev) => {
+                const thumbUrl = ev.thumbnail?.url || ev.thumbnailUrl || ev.banner || ev.image || 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&q=80';
 
-                  <Link to="/events" className="text-xs text-[#2f9e44] hover:underline font-bold flex items-center gap-1 pt-2 border-t border-[#30363d]">
-                    Read Recap <ChevronRight className="w-3.5 h-3.5" />
-                  </Link>
-                </TechCard>
-              ))}
+                return (
+                  <TechCard
+                    key={ev._id}
+                    className="w-[84vw] sm:w-[350px] flex-shrink-0 snap-start p-0 bg-[#0a0d12] border-[#30363d] overflow-hidden rounded-2xl flex flex-col justify-between group shadow-xl hover:border-[#2f9e44]/60 transition-all duration-300"
+                  >
+                    <div>
+                      {/* 16:9 Thumbnail Image Container */}
+                      <div className="h-40 sm:h-48 relative overflow-hidden bg-[#18202c]">
+                        <img
+                          src={thumbUrl}
+                          alt={ev.title}
+                          loading="lazy"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&q=80';
+                          }}
+                        />
+
+                        {/* Completed Badge */}
+                        <span className="absolute top-3 right-3 text-[10px] font-mono font-bold uppercase tracking-wider bg-[#2f9e44] text-white px-2.5 py-0.5 rounded-md shadow-lg flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Completed
+                        </span>
+
+                        {ev.category && (
+                          <span className="absolute top-3 left-3 text-[10px] font-mono uppercase font-bold text-gray-200 bg-[#0a0d12]/80 backdrop-blur-md px-2.5 py-0.5 rounded border border-gray-700/50">
+                            {ev.category}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Details */}
+                      <div className="p-4 sm:p-5 space-y-2">
+                        <h3 className="text-sm sm:text-base font-bold text-white group-hover:text-[#2f9e44] transition-colors truncate">
+                          {ev.title}
+                        </h3>
+
+                        <div className="flex items-center gap-2 text-xs font-mono text-[#2f9e44] font-semibold">
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>{ev.date}</span>
+                        </div>
+
+                        <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed">
+                          {ev.description || 'Successfully conducted technical session organized by GeeksforGeeks Campus Body.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="p-4 sm:p-5 pt-0">
+                      <Link
+                        to="/events"
+                        className="w-full py-2 sm:py-2.5 rounded-xl bg-[#18202c] text-white hover:bg-[#2f9e44] transition-colors text-xs font-bold flex items-center justify-center gap-2 border border-[#30363d]"
+                      >
+                        View Event <ArrowRight className="w-3.5 h-3.5" />
+                      </Link>
+                    </div>
+                  </TechCard>
+                );
+              })}
             </InfiniteMarquee>
           </section>
         )}
@@ -504,8 +593,8 @@ export default function Home() {
           </section>
         )}
 
-        {/* ─── 8. LATEST ANNOUNCEMENTS BANNER (STATIC) ───────────────────── */}
-        {latestAnnouncementEvent && (
+        {/* ─── 8. LATEST ANNOUNCEMENTS BANNER (DYNAMIC BULLETIN) ─────────── */}
+        {latestAnnouncement && (
           <section className="py-8 bg-gradient-to-r from-[#1b5e20] via-[#0d2e10] to-[#0a0d12] border-y border-[#2f9e44]/40 px-4 sm:px-6 lg:px-8">
             <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-4 text-center sm:text-left">
@@ -514,15 +603,26 @@ export default function Home() {
                 </div>
                 <div>
                   <span className="text-[10px] font-mono font-bold text-[#2f9e44] bg-white/10 px-2.5 py-0.5 rounded uppercase tracking-widest border border-white/20">
-                    Latest Announcement
+                    {latestAnnouncement.type || 'Latest Bulletin'}
                   </span>
-                  <h3 className="text-lg sm:text-xl font-bold text-white mt-1">{latestAnnouncementEvent.title}</h3>
-                  <p className="text-xs text-gray-300 font-medium">{latestAnnouncementEvent.date}</p>
+                  <h3 className="text-lg sm:text-xl font-bold text-white mt-1">{latestAnnouncement.title}</h3>
+                  <p className="text-xs text-gray-300 font-medium max-w-2xl">{latestAnnouncement.description}</p>
                 </div>
               </div>
-              <Link to="/events" className="px-5 py-2.5 rounded-xl bg-white text-[#0a0d12] hover:bg-[#2f9e44] hover:text-white font-bold text-xs flex items-center gap-2 transition-all flex-shrink-0">
-                View Details <ArrowRight className="w-4 h-4" />
-              </Link>
+              {latestAnnouncement.linkUrl ? (
+                <a
+                  href={latestAnnouncement.linkUrl}
+                  target={latestAnnouncement.linkUrl.startsWith('http') ? '_blank' : '_self'}
+                  rel="noopener noreferrer"
+                  className="px-5 py-2.5 rounded-xl bg-white text-[#0a0d12] hover:bg-[#2f9e44] hover:text-white font-bold text-xs flex items-center gap-2 transition-all flex-shrink-0"
+                >
+                  {latestAnnouncement.linkLabel || 'Learn More'} <ArrowRight className="w-4 h-4" />
+                </a>
+              ) : (
+                <Link to="/community" className="px-5 py-2.5 rounded-xl bg-white text-[#0a0d12] hover:bg-[#2f9e44] hover:text-white font-bold text-xs flex items-center gap-2 transition-all flex-shrink-0">
+                  Explore Community <ArrowRight className="w-4 h-4" />
+                </Link>
+              )}
             </div>
           </section>
         )}

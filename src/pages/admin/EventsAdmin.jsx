@@ -93,41 +93,49 @@ export default function EventsAdmin() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const localUrl = URL.createObjectURL(file);
-    setFormData(prev => ({ ...prev, banner: localUrl }));
     setIsUploadingBanner(true);
 
     try {
       const body = new FormData();
       body.append('file', file);
-      body.append('type', 'image');
+      body.append('folder', 'Events');
 
       const res = await api.post('/media/upload', body, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      if (res.data?.url) {
-        setFormData(prev => ({ ...prev, banner: res.data.url }));
+      const cloudUrl = res.data?.media?.url || res.data?.data?.url || res.data?.url;
+      const cloudPublicId = res.data?.media?.publicId || res.data?.data?.publicId || '';
+
+      if (cloudUrl && cloudUrl.startsWith('http')) {
+        setFormData(prev => ({ ...prev, banner: cloudUrl, bannerPublicId: cloudPublicId }));
+      } else {
+        throw new Error('Upload finished but returned invalid URL');
       }
     } catch (err) {
-      console.warn('Background banner upload finished:', err);
+      console.warn('Banner upload error:', err);
+      alert('Event thumbnail upload failed. Please try again.');
     } finally {
       setIsUploadingBanner(false);
+      if (bannerInputRef.current) bannerInputRef.current.value = '';
     }
   };
 
   const handleSave = async (e) => {
     e.preventDefault();
     try {
+      const payload = { ...formData };
+      if (!payload._id) delete payload._id;
+
       if (formData._id) {
-        await api.put(`/events/${formData._id}`, formData);
+        await api.put(`/events/${formData._id}`, payload);
       } else {
-        await api.post('/events', formData);
+        await api.post('/events', payload);
       }
       setIsModalOpen(false);
       loadData();
     } catch (err) {
-      alert('Save failed: ' + (err.response?.data?.message || err.message));
+      alert('Save failed: ' + (err.response?.data?.message || err.response?.data?.error || err.message));
     }
   };
 
@@ -142,12 +150,17 @@ export default function EventsAdmin() {
   };
 
   const handleDelete = async (id) => {
+    const isLegacy = typeof id === 'string' && (id.startsWith('evt_up_') || id.startsWith('evt_past_'));
+    if (isLegacy) {
+      alert('Legacy historical events are protected and cannot be deleted.');
+      return;
+    }
     if (!window.confirm('Delete event permanently?')) return;
     try {
       await api.delete(`/events/${id}`);
       loadData();
     } catch (err) {
-      alert('Delete failed');
+      alert(err.response?.data?.message || err.message || 'Delete failed');
     }
   };
 
