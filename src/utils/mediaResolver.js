@@ -135,7 +135,11 @@ export const getStreamPdfUrl = (url, options = {}) => {
   if (download) params.append('download', 'true');
   if (filename) params.append('filename', filename);
 
-  const base = API_BASE.replace(/\/+$/, '');
-  return `${base}/media/stream-pdf?${params.toString()}`;
+  let rawApi = (import.meta.env.VITE_API_URL || '/api').trim().replace(/\/+$/, '');
+  if (!rawApi.endsWith('/api') && rawApi.startsWith('http')) {
+    rawApi = `${rawApi}/api`;
+  }
+
+  return `${rawApi}/media/stream-pdf?${params.toString()}`;
 };
 
