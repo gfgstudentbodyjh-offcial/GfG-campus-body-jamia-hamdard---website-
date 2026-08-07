@@ -99,6 +99,7 @@ export default function CommunityFeed() {
   // Threaded Discussion Drawer State per Post
   const [activeCommentPostId, setActiveCommentPostId] = useState(null);
   const [postComments, setPostComments] = useState([]);
+  const [loadingComments, setLoadingComments] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [activeReplyToId, setActiveReplyToId] = useState(null);
   const [replyText, setReplyText] = useState('');
@@ -591,27 +592,29 @@ export default function CommunityFeed() {
       return;
     }
     setActiveCommentPostId(postId);
+    setLoadingComments(true);
     try {
       const res = await api.get(`/posts/${postId}/comments`);
       setPostComments(res.data.data || []);
     } catch (err) {
       console.warn('Error fetching post comments:', err);
+      setPostComments([]);
+    } finally {
+      setLoadingComments(false);
     }
   };
 
-  const handleAddComment = async (e, parentCommentId = null) => {
-    e.preventDefault();
+  const handleAddComment = async (text, parentCommentId = null) => {
     if (!requireAuthAction(null, 'join the discussion')) return;
 
-    const text = parentCommentId ? replyText : commentText;
-    if (!text.trim() || !activeCommentPostId || commentSubmittingRef.current) return;
+    if (!text || typeof text !== 'string' || !text.trim() || !activeCommentPostId || commentSubmittingRef.current) return;
 
     commentSubmittingRef.current = true;
     const clientRequestId = 'req_cmt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 
     try {
       const res = await api.post(`/posts/${activeCommentPostId}/comments`, {
-        content: text,
+        content: text.trim(),
         parentCommentId,
         clientRequestId
       });
@@ -625,11 +628,8 @@ export default function CommunityFeed() {
           }
           return c;
         }));
-        setReplyText('');
-        setActiveReplyToId(null);
       } else {
         setPostComments(prev => [...prev, newComment]);
-        setCommentText('');
       }
 
       setPosts(prev => prev.map(p => p._id === activeCommentPostId ? { ...p, commentsCount: (p.commentsCount || 0) + 1 } : p));
@@ -878,18 +878,36 @@ export default function CommunityFeed() {
                   const showPromoAfterThis = (posts.length >= 3 && index === 2) || (posts.length < 3 && index === posts.length - 1);
                   return (
                     <React.Fragment key={post._id}>
-                      <PostCard
-                        post={post}
-                        currentMemberId={currentMemberId}
-                        user={user}
-                        onLike={handleLike}
-                        onBookmark={handleBookmark}
-                        onDelete={handleDeleteOwnPost}
-                        onReport={(p) => setReportingTarget({ targetType: 'post', targetId: p._id })}
-                        onOpenComments={handleOpenComments}
-                        onShare={handleShare}
-                        onImageClick={(url) => setLightboxUrl(url)}
-                      />
+                      <div className="space-y-3">
+                        <PostCard
+                          post={post}
+                          currentMemberId={currentMemberId}
+                          user={user}
+                          onLike={handleLike}
+                          onBookmark={handleBookmark}
+                          onDelete={handleDeleteOwnPost}
+                          onReport={(p) => setReportingTarget({ targetType: 'post', targetId: p._id })}
+                          onOpenComments={handleOpenComments}
+                          onShare={handleShare}
+                          onImageClick={(url) => setLightboxUrl(url)}
+                        />
+
+                        {activeCommentPostId === post._id && (
+                          <div className="p-4 rounded-2xl bg-[#0d1117] border border-[#30363d] shadow-2xl animate-fade-in">
+                            <CommentSection
+                              postId={post._id}
+                              comments={postComments}
+                              loading={loadingComments}
+                              currentMemberId={currentMemberId}
+                              postAuthorId={post.authorRef?._id}
+                              onAddComment={(text, parentCommentId) => handleAddComment(text, parentCommentId)}
+                              onDeleteComment={handleDeleteComment}
+                              onReportComment={(cmt) => setReportingTarget({ targetType: 'comment', targetId: cmt._id })}
+                            />
+                          </div>
+                        )}
+                      </div>
+
                       {showPromoAfterThis && (
                         <InCampusPromo variant="feed" />
                       )}
