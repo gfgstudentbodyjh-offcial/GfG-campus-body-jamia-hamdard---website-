@@ -2,11 +2,9 @@ import React, { useState, useEffect } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Footer from '../../components/common/Footer';
 import api from '../../services/api';
-import { Download, ExternalLink, AlertTriangle, Eye } from 'lucide-react';
+import { Download, ExternalLink, AlertTriangle } from 'lucide-react';
 import TechHeader from '../../components/common/TechHeader';
 import TechCard from '../../components/common/TechCard';
-import PdfPreviewModal from '../../components/common/PdfPreviewModal';
-
 import cacheService from '../../services/cacheService';
 import { getStreamPdfUrl } from '../../utils/mediaResolver';
 
@@ -52,8 +50,6 @@ export default function ResourcesPage() {
   const [category, setCategory] = useState('All');
   const cacheKey = `resources_${category}`;
 
-  const [previewResource, setPreviewResource] = useState(null);
-
   const [resources, setResources] = useState(() => {
     const cached = cacheService.get(cacheKey);
     return cached?.data || [];
@@ -95,6 +91,17 @@ export default function ResourcesPage() {
     return unsub;
   }, [category]);
 
+  const handleOpenTab = async (id, fileUrl, title) => {
+    try {
+      if (id) await api.patch(`/resources/${id}/download`);
+    } catch (err) {
+      console.warn(err);
+    }
+
+    const targetUrl = getStreamPdfUrl(fileUrl, { download: false, filename: title });
+    window.open(targetUrl, '_blank');
+  };
+
   const handleDownload = async (id, fileUrl, title) => {
     try {
       if (id) await api.patch(`/resources/${id}/download`);
@@ -126,8 +133,8 @@ export default function ResourcesPage() {
                 onClick={() => setCategory(cat)}
                 className={`px-4 py-2 rounded-xl text-xs font-mono font-bold whitespace-nowrap transition-all flex-shrink-0 ${
                   category === cat
-                    ? 'bg-[#2f9e44] text-white shadow-lg shadow-[#2f9e44]/25 border border-[#2f9e44]'
-                    : 'bg-[#121721] text-gray-300 border border-[#30363d] hover:border-[#2f9e44]/50'
+                    ? 'bg-[#2f9e44] text-white shadow-lg shadow-[#2f9e44]/20 scale-105'
+                    : 'bg-[#121721] text-gray-400 hover:text-white border border-[#30363d] hover:border-gray-500'
                 }`}
               >
                 {cat}
@@ -136,16 +143,27 @@ export default function ResourcesPage() {
           </div>
         </TechHeader>
 
+        {/* Resources Grid */}
         {loading ? (
-          <div className="text-center py-16 text-gray-400 font-mono">Loading Resources...</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3, 4, 5, 6].map((n) => (
+              <div key={n} className="h-48 rounded-2xl bg-[#121721] border border-[#30363d] animate-pulse p-6 space-y-4">
+                <div className="h-4 w-24 bg-[#1c2128] rounded"></div>
+                <div className="h-6 w-3/4 bg-[#1c2128] rounded"></div>
+                <div className="h-12 w-full bg-[#1c2128] rounded"></div>
+              </div>
+            ))}
+          </div>
         ) : resources.length === 0 ? (
-          <div className="text-center py-16 text-gray-500 font-mono">No resources found under "{category}"</div>
+          <div className="text-center py-16 bg-[#121721] border border-[#30363d] rounded-2xl p-8 space-y-3">
+            <p className="text-gray-400 text-sm font-mono">No resources available under category: {category}</p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {resources.map((r, idx) => {
               const resUrl = getResourceUrl(r);
-              const isPdf = checkIsPdf(r);
               const isValid = isValidPdfUrl(resUrl);
+              const isPdf = checkIsPdf(r);
 
               return (
                 <TechCard key={r._id} className="p-6 bg-[#121721] flex flex-col justify-between space-y-6">
@@ -170,26 +188,26 @@ export default function ResourcesPage() {
                     <div className="flex items-center gap-2 w-full pt-1">
                       <button
                         type="button"
-                        onClick={() => setPreviewResource(r)}
+                        onClick={() => handleOpenTab(r._id, resUrl, r.title)}
                         className="flex-1 py-2.5 px-3 rounded-xl bg-[#2f9e44] hover:bg-[#258337] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-md shadow-[#2f9e44]/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
                       >
-                        <Eye className="w-4 h-4" />
-                        <span>Preview PDF</span>
+                        <ExternalLink className="w-4 h-4" />
+                        <span>Open in Tab</span>
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleDownload(r._id, resUrl)}
+                        onClick={() => handleDownload(r._id, resUrl, r.title)}
                         className="px-3.5 py-2.5 rounded-xl bg-[#1c2128] hover:bg-[#2d333b] text-gray-200 text-xs font-bold border border-[#30363d] flex items-center justify-center gap-1.5 transition-colors"
                         title="Download Material"
                       >
                         <Download className="w-4 h-4 text-gray-400" />
-                        <span className="hidden sm:inline">Download</span>
+                        <span>Download</span>
                       </button>
                     </div>
                   ) : (
                     <button
                       type="button"
-                      onClick={() => handleDownload(r._id, resUrl)}
+                      onClick={() => handleOpenTab(r._id, resUrl, r.title)}
                       className="w-full py-3 rounded-xl gradient-button text-xs font-bold flex items-center justify-center gap-2 shadow-md"
                     >
                       <ExternalLink className="w-4 h-4" />
@@ -204,17 +222,6 @@ export default function ResourcesPage() {
 
       </main>
       <Footer />
-
-      {/* PDF Preview Modal */}
-      {previewResource && (
-        <PdfPreviewModal
-          isOpen={!!previewResource}
-          url={getResourceUrl(previewResource)}
-          title={previewResource.title}
-          onClose={() => setPreviewResource(null)}
-          onDownload={() => handleDownload(previewResource._id, getResourceUrl(previewResource))}
-        />
-      )}
     </div>
   );
 }
