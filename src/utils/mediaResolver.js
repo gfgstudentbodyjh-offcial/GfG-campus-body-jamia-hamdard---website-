@@ -113,35 +113,29 @@ const API_BASE = import.meta.env.VITE_API_URL || '/api';
 /**
  * Resolves a PDF URL for viewing/downloading in frontend components.
  *
- * - Direct HTTP(S) Cloudinary / external URLs are returned directly so the browser loads
- *   or opens the document directly from CDN without hitting backend proxy routes.
- * - Relative local upload paths (/uploads/...) are routed through backend API endpoint
- *   using VITE_API_URL (${API_BASE}/media/stream-pdf?url=...).
+ * Routes PDFs through backend authenticated streaming endpoint (${API_BASE}/media/stream-pdf?url=...)
+ * to bypass Cloudinary raw ACL restrictions (401 Unauthorized) and serve inline application/pdf.
  *
  * @param {string} url Candidate PDF URL
  * @param {Object} options Options object { download: boolean, filename: string }
- * @returns {string} Safe resolved URL for iframe or link
+ * @returns {string} Stream URL pointing to backend stream endpoint
  */
 export const getStreamPdfUrl = (url, options = {}) => {
   if (!url || typeof url !== 'string') return '';
   const { download = false, filename = '' } = options;
 
   const trimmed = url.trim();
+  if (!trimmed) return '';
 
-  // If already an absolute HTTP/HTTPS URL (Cloudinary, S3, external hosting), open directly
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return trimmed;
-  }
+  // If already a backend stream URL, return as-is
+  if (trimmed.includes('/media/stream-pdf')) return trimmed;
 
-  // Relative backend upload path (/uploads/...) or local stream
-  if (trimmed.startsWith('/uploads/') || trimmed.startsWith('uploads/')) {
-    const params = new URLSearchParams();
-    params.append('url', trimmed.startsWith('/') ? trimmed : `/${trimmed}`);
-    if (download) params.append('download', 'true');
-    if (filename) params.append('filename', filename);
-    return `${API_BASE}/media/stream-pdf?${params.toString()}`;
-  }
+  const params = new URLSearchParams();
+  params.append('url', trimmed);
+  if (download) params.append('download', 'true');
+  if (filename) params.append('filename', filename);
 
-  return trimmed;
+  const base = API_BASE.replace(/\/+$/, '');
+  return `${base}/media/stream-pdf?${params.toString()}`;
 };
 
