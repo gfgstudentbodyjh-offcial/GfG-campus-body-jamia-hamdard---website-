@@ -35,10 +35,13 @@ import HeroSettingsAdmin from './pages/admin/HeroSettingsAdmin';
 import AnalyticsSettingsAdmin from './pages/admin/AnalyticsSettingsAdmin';
 import FeedModerationAdmin from './pages/admin/FeedModerationAdmin';
 import AdministratorsAdmin from './pages/admin/AdministratorsAdmin';
+import UserDirectoryAdmin from './pages/admin/UserDirectoryAdmin';
+import ScrollToTop from './components/common/ScrollToTop';
 
 export default function App() {
   return (
     <AuthProvider>
+      <ScrollToTop />
       <Routes>
         {/* Public & Member Space Routes */}
         <Route path="/" element={<Home />} />
@@ -53,6 +56,8 @@ export default function App() {
         <Route path="/community/post/:postId" element={<PostDetailPage />} />
         <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/profile/:username" element={<ProfilePage />} />
+        <Route path="/members/:memberId" element={<ProfilePage />} />
         <Route path="/verify/member/:verificationId" element={<MemberVerificationPage />} />
 
         {/* Super Admin Login */}
@@ -68,6 +73,7 @@ export default function App() {
           }
         >
           <Route index element={<AdminDashboardHome />} />
+          <Route path="users" element={<UserDirectoryAdmin />} />
           <Route path="members" element={<MembersAdmin />} />
           <Route path="teams" element={<TeamsAdmin />} />
           <Route path="faculty" element={<FacultyAdmin />} />

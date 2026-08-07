@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
-import { X, Eye, EyeOff, Sparkles, CheckCircle2, ShieldAlert, ArrowRight } from 'lucide-react';
+import { X, Eye, EyeOff, Sparkles, CheckCircle2, ShieldAlert, ArrowRight, KeyRound } from 'lucide-react';
 
 export default function AuthModal() {
-  const { isAuthModalOpen, closeAuthModal, authModalTab, setAuthModalTab, login, signup } = useAuth();
+  const { isAuthModalOpen, closeAuthModal, authModalTab, setAuthModalTab, authReason, login, signup } = useAuth();
+
+  const [showForgotNotice, setShowForgotNotice] = useState(false);
 
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
@@ -113,6 +115,13 @@ export default function AuthModal() {
           <p className="text-[11px] text-gray-400">Connect. Learn. Build. Grow together.</p>
         </div>
 
+        {/* Context-aware action reason banner */}
+        {authReason && authReason !== 'sign in to continue' && (
+          <div className="p-2.5 rounded-xl bg-[#2f9e44]/15 border border-[#2f9e44]/30 text-[#2f9e44] text-[11px] font-mono text-center font-bold animate-in fade-in">
+            Please sign in to {authReason}.
+          </div>
+        )}
+
         {/* Auth Mode Toggle Tabs */}
         <div className="flex rounded-xl bg-[#0d1117] p-1 border border-[#30363d]">
           <button
@@ -169,12 +178,35 @@ export default function AuthModal() {
                   <label className="block text-gray-300 font-semibold">Password</label>
                   <button
                     type="button"
-                    onClick={() => alert('Password reset link feature will be sent to your registered email.')}
+                    onClick={() => setShowForgotNotice(!showForgotNotice)}
                     className="text-[11px] text-[#2f9e44] hover:underline font-semibold"
                   >
                     Forgot Password?
                   </button>
                 </div>
+
+                {showForgotNotice && (
+                  <div className="mb-3 p-3.5 rounded-xl bg-[#0d1117] border border-[#30363d] space-y-2 text-left animate-fade-in">
+                    <div className="flex items-center justify-between text-[#2f9e44] font-bold text-xs">
+                      <span className="flex items-center gap-1.5">
+                        <KeyRound className="w-4 h-4" /> Forgot your password?
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotNotice(false)}
+                        className="text-gray-400 hover:text-white"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-gray-300 leading-relaxed">
+                      Password reset by email isn't available yet. If you're signed in, you can change your password from:
+                    </p>
+                    <div className="p-2 rounded-lg bg-[#161b22] border border-[#30363d] text-[10px] font-mono text-[#2f9e44] font-bold text-center">
+                      Profile → Settings → Security
+                    </div>
+                  </div>
+                )}
                 <div className="relative">
                   <input
                     type={showLoginPassword ? 'text' : 'password'}
@@ -235,9 +267,24 @@ export default function AuthModal() {
               ) : (
                 <>
                   {signupError && (
-                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 flex items-center gap-2 text-xs font-medium">
-                      <ShieldAlert className="w-4 h-4 flex-shrink-0" />
-                      <span>{signupError}</span>
+                    <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 space-y-2 text-xs">
+                      <div className="flex items-center gap-2 font-bold text-white">
+                        <ShieldAlert className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                        <span>{signupError}</span>
+                      </div>
+                      {signupError.toLowerCase().includes('already exists') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLoginEmail(signupEmail);
+                            setSignupError('');
+                            setAuthModalTab('login');
+                          }}
+                          className="w-full py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                        >
+                          Sign In Instead <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   )}
 

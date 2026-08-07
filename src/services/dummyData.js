@@ -11,58 +11,7 @@ export const MOCK_CURRENT_MANTRI = MOCK_MANTRI_LIST[0];
 
 
 // ─── Resources ──────────────────────────────────────────────────────────────────
-
-// ─── Resources ──────────────────────────────────────────────────────────────────
-export const MOCK_RESOURCES = [
-  {
-    _id: 'r1',
-    title: 'Ultimate DSA & SDE Sheet (500+ Problems)',
-    description: 'Curated list of Data Structures & Algorithms topic-wise practice problems for placement preparation.',
-    fileUrl: '#',
-    category: 'DSA',
-    downloadsCount: 1420
-  },
-  {
-    _id: 'r2',
-    title: 'Full-Stack Web Development Roadmap 2026',
-    description: 'Complete learning roadmap covering HTML, CSS, JavaScript, React, Node.js, Express, MongoDB and deployment.',
-    fileUrl: '#',
-    category: 'Development',
-    downloadsCount: 890
-  },
-  {
-    _id: 'r3',
-    title: 'Operating System Interview Notes',
-    description: 'Comprehensive OS notes covering process management, memory management, file systems, and deadlock concepts.',
-    fileUrl: '#',
-    category: 'Placement',
-    downloadsCount: 672
-  },
-  {
-    _id: 'r4',
-    title: 'Competitive Programming Handbook',
-    description: 'Essential CP techniques, algorithms, and strategies for coding competitions. Includes problem-solving patterns.',
-    fileUrl: '#',
-    category: 'CP',
-    downloadsCount: 534
-  },
-  {
-    _id: 'r5',
-    title: 'Python for Data Science Cheat Sheet',
-    description: 'Quick reference for Python libraries including NumPy, Pandas, Matplotlib, and Scikit-learn.',
-    fileUrl: '#',
-    category: 'Development',
-    downloadsCount: 1100
-  },
-  {
-    _id: 'r6',
-    title: 'DBMS Placement Quick Notes',
-    description: 'Concise DBMS notes covering normalization, SQL queries, ER diagrams, transactions, and indexing.',
-    fileUrl: '#',
-    category: 'Placement',
-    downloadsCount: 780
-  }
-];
+export const MOCK_RESOURCES = [];
 
 // ─── Announcements ──────────────────────────────────────────────────────────────
 export const MOCK_ANNOUNCEMENTS = [
@@ -272,8 +221,8 @@ export const MOCK_LEADERBOARD = [
 
 // ─── Settings (Homepage Config) ─────────────────────────────────────────────────
 export const MOCK_SETTINGS = {
-  heroHeading: 'Empowering Innovators, Coders & Future Tech Leaders',
-  heroSubheading: 'Master Data Structures, Full-Stack Web Dev, Artificial Intelligence & Competitive Programming with Jamia Hamdard\'s official GFG Campus Body.',
+  heroHeading: 'Learn. Build. Grow Together.',
+  heroSubheading: 'GeeksforGeeks Campus Body at Jamia Hamdard is a student-led tech community where students learn together, build projects, prepare for opportunities, and connect through workshops, events, hackathons, and peer learning.',
   ctaText: 'Explore Upcoming Events',
   ctaLink: '#events',
   contactEmail: 'gfg.chapter@jamiahamdard.ac.in'

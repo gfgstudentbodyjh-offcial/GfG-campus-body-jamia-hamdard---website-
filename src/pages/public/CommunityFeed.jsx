@@ -7,20 +7,26 @@ import {
   Sparkles, FileText, Award, HelpCircle, Briefcase, Code2, Search, Plus,
   Heart, MessageSquare, Bookmark, Share2, Pin, X, Send, Download, ExternalLink,
   ShieldCheck, Upload, Trash2, Calendar, Users, TrendingUp, Compass, BookmarkCheck,
-  CheckCircle2, AlertCircle, Loader2, Image as ImageIcon
+  CheckCircle2, AlertCircle, Loader2, Image as ImageIcon, Crop
 } from 'lucide-react';
+import ImageCropModal from '../../components/common/ImageCropModal';
 import TechCard from '../../components/common/TechCard';
 import InCampusPromo from '../../components/common/InCampusPromo';
 import RoleBadge from '../../components/common/RoleBadge';
 import ContentActionMenu from '../../components/common/ContentActionMenu';
 import ReportModal from '../../components/common/ReportModal';
+import PostCard from '../../components/community/PostCard';
+import CommentSection from '../../components/community/CommentSection';
+import AuthorIdentity from '../../components/common/AuthorIdentity';
 import { isValidMediaUrl, resolveAvatarUrl } from '../../utils/mediaResolver';
+import { getCachedFeed, setCachedFeed, patchCachedPost, removeCachedPost } from '../../utils/communityCache';
+import cacheService from '../../services/cacheService';
 
 import { useAuth } from '../../context/AuthContext';
 
 export default function CommunityFeed() {
   const navigate = useNavigate();
-  const { user, member: authMember, isAuthenticated, openAuthModal } = useAuth();
+  const { user, member: authMember, isAuthenticated, openAuthModal, requireAuthAction } = useAuth();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   
@@ -46,7 +52,49 @@ export default function CommunityFeed() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadedMedia, setUploadedMedia] = useState(null);
 
+  // Friendly Tag & Link State for Child-Easy Composer
+  const [selectedTopics, setSelectedTopics] = useState(['DSA', 'WebDevelopment']);
+  const [customTagText, setCustomTagText] = useState('');
+  const [showLinkInput, setShowLinkInput] = useState(false);
+
+  const toggleTopic = (topic) => {
+    if (selectedTopics.includes(topic)) {
+      setSelectedTopics(prev => prev.filter(t => t !== topic));
+    } else {
+      setSelectedTopics(prev => [...prev, topic]);
+    }
+  };
+
+  const handleAddCustomTopic = (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = customTagText.trim().replace(/^#/, '').replace(/,$/, '');
+      if (val && !selectedTopics.includes(val)) {
+        setSelectedTopics(prev => [...prev, val]);
+      }
+      setCustomTagText('');
+    }
+  };
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (isComposerOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isComposerOpen]);
+
+  // Optional Community Post Crop State & Lightbox State
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropSource, setCropSource] = useState(null);
+  const [lightboxUrl, setLightboxUrl] = useState(null);
+
   const fileInputRef = useRef(null);
+  const searchTimerRef = useRef(null);
 
   // Threaded Discussion Drawer State per Post
   const [activeCommentPostId, setActiveCommentPostId] = useState(null);
@@ -58,7 +106,10 @@ export default function CommunityFeed() {
   // Logged-in member identity
   const currentMemberId = authMember?._id || user?.id || 'm_saquib';
 
-  // Toast, Delete Post & Report State
+  // Toast, Delete Post, Publishing & Report State
+  const [isPublishing, setIsPublishing] = useState(false);
+  const isPublishingRef = useRef(false);
+
   const [toastMessage, setToastMessage] = useState('');
   const [reportingTarget, setReportingTarget] = useState(null);
   const [postToDelete, setPostToDelete] = useState(null);
@@ -111,32 +162,139 @@ export default function CommunityFeed() {
     { tag: '#Hackathon', count: '41 posts' }
   ];
 
-  const activeMembers = [
-    { name: 'Saquib Sarfaraz', role: 'Campus Mantri', photo: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80' },
-    { name: 'Aisha Khan', role: 'Technical Lead', photo: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80' },
-    { name: 'Arham Raza', role: 'Event Lead', photo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80' }
-  ];
+  const [activeMembers, setActiveMembers] = useState([]);
+  const [loadingActiveMembers, setLoadingActiveMembers] = useState(true);
 
   useEffect(() => {
-    loadPosts();
+    const cachedActive = cacheService.get('active_members_7d', 45000);
+    if (cachedActive && cachedActive.data) {
+      setActiveMembers(cachedActive.data);
+      setLoadingActiveMembers(false);
+    }
+
+    cacheService.dedupe('active_members_7d', () => api.get('/members/active'))
+      .then(res => {
+        const raw = res.data?.members || res.data?.data || res.data;
+        const data = Array.isArray(raw) ? raw : [];
+        setActiveMembers(data);
+        cacheService.set('active_members_7d', data);
+      })
+      .catch(err => {
+        console.error('[Active Members Error]:', err.message);
+        setActiveMembers([]);
+      })
+      .finally(() => setLoadingActiveMembers(false));
+  }, []);
+
+  // Synchronized Filter Handler (Left Sidebar Nav)
+  const handleNavClick = (navName) => {
+    if ((navName === 'Saved' || navName === 'My Posts') && !isAuthenticated) {
+      requireAuthAction(null, `view ${navName.toLowerCase()}`);
+      return;
+    }
+
+    setActiveNav(navName);
+
+    // Synchronize top category chip if matching
+    if (navName === 'For You' || navName === 'Latest') {
+      setTypeFilter('All');
+    } else if (navName === 'Study Notes') {
+      setTypeFilter('Study Note');
+    } else if (navName === 'Questions') {
+      setTypeFilter('Question');
+    } else if (navName === 'Projects') {
+      setTypeFilter('Project');
+    } else if (navName === 'Achievements') {
+      setTypeFilter('Achievement');
+    }
+  };
+
+  // Synchronized Filter Handler (Top Category Chips)
+  const handleCategoryChipClick = (catName) => {
+    setTypeFilter(catName);
+    if (catName === 'All') {
+      if (activeNav !== 'Latest') setActiveNav('For You');
+    } else if (catName === 'Study Note') {
+      setActiveNav('Study Notes');
+    } else if (catName === 'Question') {
+      setActiveNav('Questions');
+    } else if (catName === 'Project') {
+      setActiveNav('Projects');
+    } else if (catName === 'Achievement') {
+      setActiveNav('Achievements');
+    }
+  };
+
+  // Hashtag Toggle & Undo Handler (#All clears tag filter)
+  const handleTagClick = (tag) => {
+    if (tag === '#All' || tag === 'All' || selectedTag === tag) {
+      setSelectedTag('');
+    } else {
+      setSelectedTag(tag);
+    }
+  };
+
+  // Save scroll position when navigating away or unmounting
+  useEffect(() => {
+    const handleScroll = () => {
+      sessionStorage.setItem('community_feed_scroll', String(window.scrollY));
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Restore scroll position after posts are rendered from cache or network
+  useEffect(() => {
+    if (!loading && posts.length > 0) {
+      const savedY = sessionStorage.getItem('community_feed_scroll');
+      if (savedY) {
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: parseInt(savedY, 10), behavior: 'instant' });
+        });
+      }
+    }
+  }, [loading]);
+
+  useEffect(() => {
+    // Search debouncing 350ms
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      loadPosts();
+    }, search ? 350 : 0);
+
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
   }, [activeNav, typeFilter, selectedTag, search]);
 
   const loadPosts = async () => {
-    setLoading(true);
+    const cacheKey = `${activeNav}_${typeFilter}_${selectedTag}_${search}`;
+    const cached = getCachedFeed(cacheKey);
+
+    if (cached && cached.length > 0) {
+      setPosts(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
     try {
-      const res = await api.get('/posts', {
+      const res = await cacheService.dedupe(`feed:${cacheKey}`, () => api.get('/posts', {
         params: {
           filter: activeNav,
           type: typeFilter,
           tag: selectedTag,
           search
         }
-      });
-      setPosts(res.data.data || []);
+      }));
+      const fetchedPosts = res.data.data || [];
+      setPosts(fetchedPosts);
+      setCachedFeed(cacheKey, fetchedPosts);
     } catch (err) {
       console.warn('Failed loading feed posts:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const showToast = (msg) => {
@@ -167,7 +325,8 @@ export default function CommunityFeed() {
 
     try {
       setUploadProgress(65);
-      const res = await api.post('/media/upload', formData, {
+      const endpoint = detectedType === 'pdf' ? '/media/upload-pdf' : '/media/upload';
+      const res = await api.post(endpoint, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setUploadProgress(100);
@@ -176,29 +335,34 @@ export default function CommunityFeed() {
       const cloudUrl = res.data?.media?.url || res.data?.data?.url || res.data?.url;
       const cloudPublicId = res.data?.media?.publicId || res.data?.data?.publicId || '';
 
-      if (!cloudUrl || !cloudUrl.startsWith('http')) {
-        throw new Error('Upload did not return a valid Cloudinary URL.');
+      const isValidUrl = cloudUrl && (cloudUrl.startsWith('http') || cloudUrl.startsWith('/uploads/') || cloudUrl.startsWith('/api/'));
+
+      if (isValidUrl) {
+        URL.revokeObjectURL(localUrl);
+        setFilePreviewUrl(cloudUrl);
+        setUploadedMedia({
+          type: detectedType,
+          url: cloudUrl,
+          publicId: cloudPublicId,
+          fileName: file.name,
+          size: file.size
+        });
+      } else {
+        throw new Error('Upload completed but returned an unresolvable URL: ' + String(cloudUrl));
       }
-
-      const mediaAsset = {
-        type: detectedType,
-        url: cloudUrl,
-        publicId: cloudPublicId,
-        fileName: file.name,
-        mimeType: file.type,
-        size: file.size
-      };
-
-      setUploadedMedia(mediaAsset);
-      setIsUploading(false);
-      showToast(`${detectedType.toUpperCase()} file uploaded successfully`);
     } catch (err) {
-      console.error('[CommunityFeed] Media upload failed:', err);
-      // Production: do NOT fall back to blob URL — it cannot be stored in MongoDB
-      setUploadedMedia(null);
-      setFilePreviewUrl(null);
+      console.error('Media upload error:', err);
+      showToast('Media upload failed. Local preview retained for posting.');
+      // Keep local preview URL so the user can still post with the attached file!
+      setUploadedMedia({
+        type: detectedType,
+        url: localUrl,
+        publicId: `local_${Date.now()}`,
+        fileName: file.name,
+        size: file.size
+      });
+    } finally {
       setIsUploading(false);
-      showToast('Upload failed. Please try again.');
     }
   };
 
@@ -212,73 +376,200 @@ export default function CommunityFeed() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleCreatePostSubmit = async (e) => {
-    e.preventDefault();
-    if (!content.trim()) return;
+  const handleOpenAdjustPostCrop = () => {
+    const src = filePreviewUrl || selectedFile;
+    if (!src) return;
+    setCropSource(src);
+    setCropModalOpen(true);
+  };
 
-    const mediaList = uploadedMedia ? [uploadedMedia] : [];
-    const parsedTags = tagsInput.split(',').map(t => t.trim().replace('#', '')).filter(Boolean);
+  const handleApplyCroppedPostImage = async ({ croppedFile }) => {
+    if (!croppedFile) return;
+
+    setIsUploading(true);
+    setUploadProgress(30);
+
+    const formData = new FormData();
+    formData.append('mediaFile', croppedFile);
+    formData.append('folder', 'Posts');
 
     try {
+      setUploadProgress(70);
+      const res = await api.post('/media/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setUploadProgress(100);
+
+      const cloudUrl = res.data?.media?.url || res.data?.data?.url || res.data?.url;
+      const cloudPublicId = res.data?.media?.publicId || res.data?.data?.publicId || '';
+
+      if (cloudUrl && cloudUrl.startsWith('http')) {
+        setFilePreviewUrl(cloudUrl);
+        setUploadedMedia({
+          type: 'image',
+          url: cloudUrl,
+          publicId: cloudPublicId,
+          fileName: croppedFile.name,
+          size: croppedFile.size
+        });
+        showToast('Image framing updated!');
+      }
+    } catch (err) {
+      console.error('Cropped post media upload error:', err);
+      showToast('Could not update image framing.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const postClientIdRef = useRef(null);
+  const handleCreatePostSubmit = async (e) => {
+    e.preventDefault();
+    if (!requireAuthAction(null, 'create a community post')) return;
+    const contentWords = content.trim().split(/\s+/).filter(Boolean).length;
+    if (contentWords > 500) {
+      alert('Post content cannot exceed 500 words.');
+      return;
+    }
+    if (title && title.length > 120) {
+      alert('Title cannot exceed 120 characters.');
+      return;
+    }
+
+    isPublishingRef.current = true;
+    setIsPublishing(true);
+
+    if (!postClientIdRef.current) {
+      postClientIdRef.current = 'req_post_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+    }
+
+    try {
+      const mediaList = uploadedMedia ? [uploadedMedia] : [];
+      const parsedTags = Array.from(new Set([
+        ...selectedTopics,
+        ...tagsInput.split(',').map(t => t.trim().replace('#', '')).filter(Boolean)
+      ]));
+
       const payload = {
         postType,
-        title,
+        title: title || (postType === 'Thought' ? '' : 'Discussion Note'),
         content,
         media: mediaList,
         externalUrl,
-        tags: parsedTags
+        tags: parsedTags,
+        clientRequestId: postClientIdRef.current
       };
 
       const res = await api.post('/posts', payload);
-      setPosts(prev => [res.data.data, ...prev]);
+      const newPost = res.data.data;
+
+      setPosts(prev => [newPost, ...prev]);
       setIsComposerOpen(false);
       
       // Reset form
       setTitle('');
       setContent('');
       setExternalUrl('');
+      setShowLinkInput(false);
+      setSelectedTopics(['DSA', 'WebDevelopment']);
+      setCustomTagText('');
       setTagsInput('DSA, WebDev');
       handleRemoveMedia();
+      postClientIdRef.current = null;
       showToast('Community post published!');
     } catch (err) {
       alert('Failed creating post: ' + (err.response?.data?.message || err.message));
+    } finally {
+      isPublishingRef.current = false;
+      setIsPublishing(false);
     }
   };
 
+  const pendingLikesRef = useRef(new Set());
+  const pendingBookmarksRef = useRef(new Set());
+
   const handleLike = async (postId) => {
+    if (!requireAuthAction(null, 'like posts')) return;
+    if (pendingLikesRef.current.has(postId)) return;
+    pendingLikesRef.current.add(postId);
+
+    let prevState = null;
+    let nextLiked = false;
+    let nextCount = 0;
+
+    setPosts(prev => prev.map(p => {
+      if (p._id === postId) {
+        prevState = { isLiked: p.isLiked, likesCount: p.likesCount };
+        nextLiked = !p.isLiked;
+        nextCount = nextLiked ? (p.likesCount || 0) + 1 : Math.max(0, (p.likesCount || 1) - 1);
+        return { ...p, isLiked: nextLiked, likesCount: nextCount };
+      }
+      return p;
+    }));
+
+    // Synchronize cache immediately for instant persistence across routes
+    patchCachedPost(postId, (p) => ({ ...p, likesCount: nextCount, isLiked: nextLiked }));
+
     try {
       const res = await api.post(`/posts/${postId}/like`);
-      setPosts(prev => prev.map(p => {
-        if (p._id === postId) {
-          return {
-            ...p,
-            likesCount: res.data.likesCount,
-            isLiked: res.data.isLiked
-          };
-        }
-        return p;
-      }));
+      if (res.data?.success || res.data?.isLiked !== undefined) {
+        const serverCount = res.data.likesCount !== undefined ? res.data.likesCount : nextCount;
+        const serverLiked = res.data.isLiked !== undefined ? res.data.isLiked : nextLiked;
+        setPosts(prev => prev.map(p => p._id === postId ? { ...p, likesCount: serverCount, isLiked: serverLiked } : p));
+        patchCachedPost(postId, (p) => ({ ...p, likesCount: serverCount, isLiked: serverLiked }));
+      }
     } catch (err) {
       console.warn('Like toggle failed:', err);
+      if (prevState) {
+        setPosts(prev => prev.map(p => p._id === postId ? { ...p, ...prevState } : p));
+        patchCachedPost(postId, (p) => ({ ...p, ...prevState }));
+        showToast("Couldn't update like.");
+      }
+    } finally {
+      pendingLikesRef.current.delete(postId);
     }
   };
 
   const handleBookmark = async (postId) => {
+    if (!requireAuthAction(null, 'save posts')) return;
+    if (pendingBookmarksRef.current.has(postId)) return;
+    pendingBookmarksRef.current.add(postId);
+
+    let prevState = null;
+    let nextBookmarked = false;
+    let nextCount = 0;
+
+    setPosts(prev => prev.map(p => {
+      if (p._id === postId) {
+        prevState = { isBookmarked: p.isBookmarked, bookmarksCount: p.bookmarksCount };
+        nextBookmarked = !p.isBookmarked;
+        nextCount = nextBookmarked ? (p.bookmarksCount || 0) + 1 : Math.max(0, (p.bookmarksCount || 1) - 1);
+        return { ...p, isBookmarked: nextBookmarked, bookmarksCount: nextCount };
+      }
+      return p;
+    }));
+
+    // Synchronize cache immediately for instant persistence across routes
+    patchCachedPost(postId, (p) => ({ ...p, bookmarksCount: nextCount, isBookmarked: nextBookmarked }));
+
     try {
       const res = await api.post(`/posts/${postId}/bookmark`);
-      setPosts(prev => prev.map(p => {
-        if (p._id === postId) {
-          return {
-            ...p,
-            bookmarksCount: res.data.bookmarksCount,
-            isBookmarked: res.data.isBookmarked
-          };
-        }
-        return p;
-      }));
-      showToast(res.data.isBookmarked ? 'Post saved to bookmarks' : 'Post removed from bookmarks');
+      if (res.data?.success || res.data?.isBookmarked !== undefined) {
+        const serverCount = res.data.bookmarksCount !== undefined ? res.data.bookmarksCount : nextCount;
+        const serverBookmarked = res.data.isBookmarked !== undefined ? res.data.isBookmarked : nextBookmarked;
+        setPosts(prev => prev.map(p => p._id === postId ? { ...p, bookmarksCount: serverCount, isBookmarked: serverBookmarked } : p));
+        patchCachedPost(postId, (p) => ({ ...p, bookmarksCount: serverCount, isBookmarked: serverBookmarked }));
+        showToast(serverBookmarked ? 'Post saved to bookmarks' : 'Post removed from bookmarks');
+      }
     } catch (err) {
       console.warn('Bookmark toggle failed:', err);
+      if (prevState) {
+        setPosts(prev => prev.map(p => p._id === postId ? { ...p, ...prevState } : p));
+        patchCachedPost(postId, (p) => ({ ...p, ...prevState }));
+        showToast("Couldn't save post.");
+      }
+    } finally {
+      pendingBookmarksRef.current.delete(postId);
     }
   };
 
@@ -310,37 +601,49 @@ export default function CommunityFeed() {
 
   const handleAddComment = async (e, parentCommentId = null) => {
     e.preventDefault();
+    if (!requireAuthAction(null, 'join the discussion')) return;
+
     const text = parentCommentId ? replyText : commentText;
-    if (!text.trim() || !activeCommentPostId) return;
+    if (!text.trim() || !activeCommentPostId || commentSubmittingRef.current) return;
+
+    commentSubmittingRef.current = true;
+    const clientRequestId = 'req_cmt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 
     try {
       const res = await api.post(`/posts/${activeCommentPostId}/comments`, {
         content: text,
-        parentCommentId
+        parentCommentId,
+        clientRequestId
       });
+
+      const newComment = res.data.data;
 
       if (parentCommentId) {
         setPostComments(prev => prev.map(c => {
           if (c._id === parentCommentId) {
-            return { ...c, replies: [...(c.replies || []), res.data.data] };
+            return { ...c, replies: [...(c.replies || []), newComment] };
           }
           return c;
         }));
         setReplyText('');
         setActiveReplyToId(null);
       } else {
-        setPostComments(prev => [...prev, res.data.data]);
+        setPostComments(prev => [...prev, newComment]);
         setCommentText('');
       }
 
       setPosts(prev => prev.map(p => p._id === activeCommentPostId ? { ...p, commentsCount: (p.commentsCount || 0) + 1 } : p));
-      showToast('Reply added');
+      patchCachedPost(activeCommentPostId, (p) => ({ ...p, commentsCount: (p.commentsCount || 0) + 1 }));
+      showToast('Comment added');
     } catch (err) {
-      alert('Failed adding comment');
+      alert('Failed adding comment: ' + (err.response?.data?.message || err.message));
+    } finally {
+      commentSubmittingRef.current = false;
     }
   };
 
   const handleDeleteComment = async (commentId) => {
+    if (!requireAuthAction(null, 'delete comments')) return;
     if (!window.confirm('Remove comment from discussion?')) return;
     try {
       await api.delete(`/posts/comments/${commentId}`, { data: { memberId: currentMemberId } });
@@ -385,7 +688,7 @@ export default function CommunityFeed() {
             {/* Feed Navigation Card */}
             <div className="p-4 rounded-2xl bg-[#121721] border border-[#30363d] space-y-1">
               <span className="text-[10px] font-mono font-bold text-[#2f9e44] uppercase tracking-wider block px-3 pb-2 border-b border-[#30363d]/60">
-                01 // COMMUNITY FEED
+                COMMUNITY FEED
               </span>
 
               {[
@@ -403,7 +706,7 @@ export default function CommunityFeed() {
                 return (
                   <button
                     key={item.name}
-                    onClick={() => setActiveNav(item.name)}
+                    onClick={() => handleNavClick(item.name)}
                     className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-150 flex items-center gap-3 ${
                       isSelected
                         ? 'bg-[#2f9e44] text-white shadow-md shadow-[#2f9e44]/20 border border-[#2f9e44]'
@@ -420,7 +723,7 @@ export default function CommunityFeed() {
             {/* Quick Discover Shortcuts */}
             <div className="p-4 rounded-2xl bg-[#121721] border border-[#30363d] space-y-3">
               <span className="text-[10px] font-mono font-bold text-[#2f9e44] uppercase tracking-wider block border-b border-[#30363d]/60 pb-2">
-                02 // DISCOVER MODULES
+                DISCOVER
               </span>
 
               <div className="space-y-1 text-xs">
@@ -463,64 +766,20 @@ export default function CommunityFeed() {
               </button>
             </div>
 
-            {/* Create Post Entry Trigger */}
-            <TechCard
-              onClick={() => setIsComposerOpen(true)}
-              className="p-3.5 sm:p-4 bg-[#121721] border-[#30363d] hover:border-[#2f9e44]/50 cursor-pointer transition-all space-y-3"
-            >
-              <div className="flex items-center gap-3">
+            {/* Inline Quick Post Box */}
+            <TechCard className="p-4 bg-[#121721] border-[#30363d] space-y-3">
+              <div
+                onClick={() => setIsComposerOpen(true)}
+                className="flex items-center gap-3 cursor-pointer group"
+              >
                 <img
-                  src={resolveAvatarUrl(authMember?.photo, authMember?.name || user?.username || 'Member')}
-                  alt="Member avatar"
-                  className="w-10 h-10 rounded-full object-cover border border-[#2f9e44] flex-shrink-0"
-                  onError={(e) => {
-                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(authMember?.name || user?.username || 'Member')}&background=2f9e44&color=fff&bold=true`;
-                  }}
+                  src={resolveAvatarUrl(authMember?.photo || user?.photo, authMember?.name || user?.username || 'You')}
+                  alt="Your avatar"
+                  className="w-9 h-9 rounded-full object-cover border border-[#2f9e44] flex-shrink-0"
                 />
                 <div className="flex-1 bg-[#0a0d12] border border-[#30363d] rounded-xl px-3.5 py-2.5 text-xs text-gray-400 truncate">
                   Share something with the community...
                 </div>
-              </div>
-
-              {/* Quick Action Buttons */}
-              <div className="flex items-center justify-between pt-2 border-t border-[#30363d]/60 text-xs font-semibold text-gray-400">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setFileType('image');
-                    setIsComposerOpen(true);
-                    setTimeout(() => fileInputRef.current?.click(), 200);
-                  }}
-                  className="flex items-center gap-1.5 hover:text-white px-2 py-1.5 rounded-lg hover:bg-[#18202c] min-h-[44px] sm:min-h-0"
-                >
-                  <ImageIcon className="w-4 h-4 text-[#2f9e44]" /> Photo
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setFileType('pdf');
-                    setIsComposerOpen(true);
-                    setTimeout(() => fileInputRef.current?.click(), 200);
-                  }}
-                  className="flex items-center gap-1.5 hover:text-white px-2 py-1.5 rounded-lg hover:bg-[#18202c] min-h-[44px] sm:min-h-0"
-                >
-                  <FileText className="w-4 h-4 text-[#06b6d4]" /> PDF Note
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPostType('Question');
-                    setIsComposerOpen(true);
-                  }}
-                  className="flex items-center gap-1.5 hover:text-white px-2 py-1.5 rounded-lg hover:bg-[#18202c] min-h-[44px] sm:min-h-0"
-                >
-                  <HelpCircle className="w-4 h-4 text-yellow-400" /> Question
-                </button>
               </div>
             </TechCard>
 
@@ -533,7 +792,7 @@ export default function CommunityFeed() {
                   return (
                     <button
                       key={cat.name}
-                      onClick={() => setTypeFilter(cat.name)}
+                      onClick={() => handleCategoryChipClick(cat.name)}
                       className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 flex-none snap-start ${
                         isSelected
                           ? 'bg-[#2f9e44] text-white shadow-md border border-[#2f9e44]'
@@ -564,14 +823,16 @@ export default function CommunityFeed() {
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar text-xs pb-1 pr-4 max-w-full">
               <span className="text-gray-500 font-mono font-bold flex-none">TAGS:</span>
               {popularTags.map(tag => {
-                const isSelected = selectedTag === tag;
+                const isAll = tag === '#All' || tag === 'All';
+                const isSelected = isAll ? !selectedTag : selectedTag === tag;
                 return (
                   <button
                     key={tag}
-                    onClick={() => setSelectedTag(tag)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap flex-none ${
+                    type="button"
+                    onClick={() => handleTagClick(tag)}
+                    className={`px-3 py-1 rounded-xl text-xs font-mono font-bold whitespace-nowrap flex-none transition-all touch-manipulation focus:outline-none ${
                       isSelected
-                        ? 'bg-[#2f9e44]/20 text-[#2f9e44] border border-[#2f9e44]/40 font-bold'
+                        ? 'bg-[#2f9e44] text-white shadow-md border border-[#2f9e44]'
                         : 'bg-[#121721] text-gray-400 hover:text-white border border-[#30363d]'
                     }`}
                   >
@@ -598,326 +859,38 @@ export default function CommunityFeed() {
                 ))}
               </div>
             ) : posts.length === 0 ? (
-              <TechCard className="p-12 text-center bg-[#121721] border-[#30363d] space-y-3">
-                <p className="text-base font-bold text-white">No community posts found</p>
+              <div className="py-16 text-center space-y-3 bg-[#121721] rounded-2xl border border-[#30363d] p-8">
+                <Sparkles className="w-8 h-8 text-gray-500 mx-auto" />
+                <h3 className="text-base font-bold text-white">No community posts found</h3>
                 <p className="text-xs text-gray-400 max-w-sm mx-auto">
-                  Be the first to share a study note, project update, question, or achievement with fellow chapter members!
+                  Be the first to start a conversation, share notes, or post a project update!
                 </p>
-                <button onClick={() => setIsComposerOpen(true)} className="px-5 py-2.5 rounded-xl gradient-button text-xs font-bold inline-flex items-center gap-2">
-                  <Plus className="w-4 h-4" /> Create First Post
+                <button
+                  onClick={() => setIsComposerOpen(true)}
+                  className="px-5 py-2.5 rounded-xl gradient-button text-xs font-bold inline-flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" /> Share Community Post
                 </button>
-              </TechCard>
+              </div>
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {posts.map((post, index) => {
-                  const imageMedia = post.media?.filter(m => m.type === 'image') || [];
-                  const pdfMedia = post.media?.filter(m => m.type === 'pdf') || [];
-
+                  const showPromoAfterThis = (posts.length >= 3 && index === 2) || (posts.length < 3 && index === posts.length - 1);
                   return (
                     <React.Fragment key={post._id}>
-                      <TechCard
-                        className="p-5 sm:p-6 bg-[#121721] border-[#30363d] space-y-4 hover:border-[#2f9e44]/40 transition-all tech-corner"
-                      >
-                        {post.isPinned && (
-                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-[#2f9e44] bg-[#2f9e44]/15 px-3 py-1 rounded-full border border-[#2f9e44]/30 w-fit">
-                            <Pin className="w-3 h-3 fill-[#2f9e44]" /> Pinned Spotlight Discussion
-                          </div>
-                        )}
-
-                        {/* Author Header — Mobile Responsive Layout */}
-                        <div className="flex items-start justify-between gap-2.5">
-                          <div className="flex items-start gap-3 min-w-0 flex-1">
-                            <Link to="/profile" className="flex-shrink-0">
-                              <img
-                                src={resolveAvatarUrl(post.authorRef?.photo, post.authorRef?.name || 'Member')}
-                                alt={post.authorRef?.name || 'Member'}
-                                className="w-10 h-10 min-w-[40px] min-h-[40px] aspect-square rounded-full object-cover border border-[#2f9e44] flex-shrink-0"
-                                onError={(e) => {
-                                  e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(post.authorRef?.name || 'Member')}&background=2f9e44&color=fff&bold=true`;
-                                }}
-                              />
-                            </Link>
-                            <div className="min-w-0 space-y-1 flex-1">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <Link to="/profile" className="font-bold text-white text-sm hover:text-[#2f9e44] leading-snug whitespace-nowrap truncate">
-                                  {post.authorRef?.name || 'Community Member'}
-                                </Link>
-                                <RoleBadge role={post.authorRef?.role} />
-                              </div>
-                              <p className="text-[10px] sm:text-[11px] text-gray-400 font-medium truncate">
-                                {post.authorRef?.teamName || 'General'} • {new Date(post.createdAt).toLocaleDateString()}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 pt-0.5">
-                            <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#18202c] text-[#2f9e44] border border-[#2f9e44]/30 whitespace-nowrap">
-                              {post.postType}
-                            </span>
-                            <ContentActionMenu
-                              targetType="post"
-                              targetId={post._id}
-                              isOwner={String(post.authorRef?._id || post.authorRef) === String(currentMemberId) || user?.role === 'Super Admin'}
-                              isBookmarked={post.isBookmarked}
-                              onBookmark={() => handleBookmark(post._id)}
-                              onDelete={() => handleDeleteOwnPost(post._id)}
-                              onReport={() => setReportingTarget({ targetType: 'post', targetId: post._id })}
-                              onCopyLink={() => {
-                                navigator.clipboard.writeText(`${window.location.origin}/community/post/${post._id}`);
-                                showToast('Post link copied to clipboard!');
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Content Title & Body */}
-                        <div className="space-y-1.5">
-                          {post.title && (
-                            <Link to={`/community/post/${post._id}`} className="text-base font-bold text-white hover:text-[#2f9e44] transition-colors leading-snug block">
-                              {post.title}
-                            </Link>
-                          )}
-                          <p className="text-xs sm:text-sm text-gray-300 leading-relaxed whitespace-pre-line line-clamp-4">
-                            {post.content}
-                          </p>
-                        </div>
-
-                        {/* External Link Option */}
-                        {post.externalUrl && (
-                          <a
-                            href={post.externalUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="p-3 rounded-xl bg-[#0a0d12] border border-[#30363d] hover:border-[#2f9e44]/50 flex items-center justify-between text-xs transition-colors"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <ExternalLink className="w-3.5 h-3.5 text-[#2f9e44] flex-shrink-0" />
-                              <span className="text-gray-300 font-mono truncate">{post.externalUrl}</span>
-                            </div>
-                            <span className="text-[#2f9e44] font-bold text-[11px] flex-shrink-0">Open Link →</span>
-                          </a>
-                        )}
-
-                        {/* Image Attachment Presentation */}
-                        {imageMedia.length > 0 && (
-                          <div className="space-y-3">
-                            {imageMedia.map((img, idx) => (
-                              <div key={idx} className="rounded-xl overflow-hidden max-h-96 border border-[#30363d] bg-black/40">
-                                {isValidMediaUrl(img.url) ? (
-                                  <img
-                                    src={img.url}
-                                    alt={img.fileName || 'Attachment'}
-                                    className="w-full h-full object-cover max-h-96"
-                                    onError={(e) => {
-                                      e.target.style.display = 'none';
-                                      e.target.nextSibling && (e.target.nextSibling.style.display = 'flex');
-                                    }}
-                                  />
-                                ) : null}
-                                <div
-                                  className="hidden items-center justify-center h-24 text-xs font-mono text-gray-500 gap-2"
-                                  style={{ display: isValidMediaUrl(img.url) ? 'none' : 'flex' }}
-                                >
-                                  <ImageIcon className="w-4 h-4 text-gray-600" />
-                                  <span>Media unavailable</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* PDF Attachment Presentation */}
-                        {pdfMedia.length > 0 && (
-                          <div className="space-y-2">
-                            {pdfMedia.map((pdf, idx) => (
-                              <div key={idx} className="p-3.5 rounded-xl bg-[#0a0d12] border border-[#30363d] flex items-center justify-between">
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className="p-2.5 rounded-lg bg-[#2f9e44]/15 text-[#2f9e44] border border-[#2f9e44]/30 flex-shrink-0">
-                                    <FileText className="w-5 h-5" />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-bold text-white truncate">{pdf.fileName || 'Study Document / Notes.pdf'}</p>
-                                    <p className="text-[10px] text-gray-400 font-mono">
-                                      PDF Document • {pdf.size ? `${(pdf.size / (1024 * 1024)).toFixed(2)} MB` : 'Note PDF'}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <a
-                                  href={pdf.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="px-3.5 py-2 rounded-lg bg-[#18202c] hover:bg-[#2f9e44] text-white text-xs font-bold border border-[#30363d] flex items-center gap-1.5 transition-colors flex-shrink-0"
-                                >
-                                  <Download className="w-3.5 h-3.5" /> Open PDF
-                                </a>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Post Tags */}
-                        {post.tags && post.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 pt-1">
-                            {post.tags.map((tag, idx) => (
-                              <span key={idx} className="text-[10px] font-mono font-semibold text-[#2f9e44] bg-[#2f9e44]/10 px-2.5 py-0.5 rounded border border-[#2f9e44]/20">
-                                #{tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Actions Footer */}
-                        <div className="pt-3 border-t border-[#30363d] grid grid-cols-4 sm:flex sm:items-center sm:justify-between text-xs text-gray-400 gap-1 sm:gap-6">
-                          <button
-                            onClick={() => handleLike(post._id)}
-                            className={`flex items-center justify-center sm:justify-start gap-1.5 font-bold transition-colors min-h-[44px] sm:min-h-0 ${
-                              post.isLiked ? 'text-red-400' : 'hover:text-red-400'
-                            }`}
-                          >
-                            <Heart className={`w-4 h-4 ${post.isLiked ? 'text-red-500 fill-red-500' : 'text-gray-400'}`} />
-                            <span>{post.likesCount || 0}</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleOpenComments(post._id)}
-                            className="flex items-center justify-center sm:justify-start gap-1.5 hover:text-white transition-colors font-medium min-h-[44px] sm:min-h-0"
-                          >
-                            <MessageSquare className="w-4 h-4 text-gray-400" />
-                            <span className="hidden sm:inline">{post.commentsCount || 0} Comments</span>
-                            <span className="sm:hidden">{post.commentsCount || 0}</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleBookmark(post._id)}
-                            className={`flex items-center justify-center sm:justify-start gap-1.5 font-bold transition-colors min-h-[44px] sm:min-h-0 ${
-                              post.isBookmarked ? 'text-[#2f9e44]' : 'hover:text-[#2f9e44]'
-                            }`}
-                          >
-                            <Bookmark className={`w-4 h-4 ${post.isBookmarked ? 'text-[#2f9e44] fill-[#2f9e44]' : 'text-gray-400'}`} />
-                            <span>{post.bookmarksCount || 0}</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleShare(post)}
-                            className="flex items-center justify-center sm:justify-start gap-1.5 hover:text-white transition-colors font-medium min-h-[44px] sm:min-h-0"
-                          >
-                            <Share2 className="w-4 h-4 text-gray-400" />
-                            <span className="hidden sm:inline">Share</span>
-                          </button>
-                        </div>
-
-                        {/* Inline Threaded 2-Level Discussion Drawer */}
-                        {activeCommentPostId === post._id && (
-                          <div className="pt-4 border-t border-[#30363d] space-y-4">
-                            <div className="flex items-center justify-between">
-                              <h4 className="font-bold text-white text-xs flex items-center gap-1.5">
-                                <MessageSquare className="w-3.5 h-3.5 text-[#2f9e44]" /> Threaded Discussion
-                              </h4>
-                              <Link to={`/community/post/${post._id}`} className="text-[10px] text-[#2f9e44] hover:underline font-bold">
-                                Full Post Page →
-                              </Link>
-                            </div>
-
-                            {/* Add Top Comment Form */}
-                            <form onSubmit={(e) => handleAddComment(e, null)} className="flex gap-2">
-                              <input
-                                type="text"
-                                placeholder="Write a comment..."
-                                value={commentText}
-                                onChange={e => setCommentText(e.target.value)}
-                                className="flex-1 bg-[#0a0d12] border border-[#30363d] rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#2f9e44]"
-                              />
-                              <button type="submit" className="px-4 py-2 rounded-xl gradient-button text-xs font-bold flex items-center gap-1">
-                                <Send className="w-3 h-3" />
-                              </button>
-                            </form>
-
-                            {/* 2-Level Comment Stream */}
-                            <div className="space-y-3 pt-1">
-                              {postComments.map((c) => {
-                                const canDeleteComment = c.authorRef?._id === currentMemberId || post.authorRef?._id === currentMemberId;
-
-                                return (
-                                  <div key={c._id} className="p-3 rounded-xl bg-[#0a0d12] border border-[#30363d] text-xs space-y-2">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-2">
-                                        <img
-                                          src={c.authorRef?.photo || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80'}
-                                          alt={c.authorRef?.name || 'Member'}
-                                          className="w-6 h-6 rounded-full object-cover border border-[#2f9e44]"
-                                        />
-                                        <span className="font-bold text-white">{c.authorRef?.name || 'Member'}</span>
-                                        <RoleBadge role={c.authorRef?.role} />
-                                        <span className="text-[9px] text-gray-500">{new Date(c.createdAt).toLocaleTimeString()}</span>
-                                      </div>
-
-                                      <div className="flex items-center gap-2">
-                                        <button
-                                          onClick={() => setActiveReplyToId(activeReplyToId === c._id ? null : c._id)}
-                                          className="text-[10px] text-[#2f9e44] hover:underline font-bold px-2 py-0.5 rounded bg-[#2f9e44]/10 border border-[#2f9e44]/30"
-                                        >
-                                          Reply
-                                        </button>
-                                        <ContentActionMenu
-                                          targetType="comment"
-                                          targetId={c._id}
-                                          isOwner={canDeleteComment}
-                                          onDelete={() => handleDeleteComment(c._id)}
-                                          onReport={() => setReportingTarget({ targetType: 'comment', targetId: c._id })}
-                                        />
-                                      </div>
-                                    </div>
-
-                                  <p className="text-gray-300 pl-8">{c.content}</p>
-
-                                  {/* Inline Reply Input */}
-                                  {activeReplyToId === c._id && (
-                                    <form onSubmit={(e) => handleAddComment(e, c._id)} className="flex gap-2 pl-8 pt-1">
-                                      <input
-                                        type="text"
-                                        placeholder={`Reply to ${c.authorRef?.name || 'member'}...`}
-                                        value={replyText}
-                                        onChange={e => setReplyText(e.target.value)}
-                                        className="flex-1 bg-[#121721] border border-[#30363d] rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-[#2f9e44]"
-                                      />
-                                      <button type="submit" className="px-3 py-1 rounded-lg gradient-button text-xs font-bold">
-                                        Reply
-                                      </button>
-                                    </form>
-                                  )}
-
-                                  {/* Level-2 Nested Replies */}
-                                  {c.replies && c.replies.length > 0 && (
-                                    <div className="pl-8 pt-2 space-y-2 border-l border-[#2f9e44]/30">
-                                      {c.replies.map((reply) => (
-                                        <div key={reply._id} className="p-2 rounded-lg bg-[#121721] border border-[#30363d]/50 space-y-1">
-                                          <div className="flex items-center gap-2">
-                                            <img
-                                              src={reply.authorRef?.photo || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80'}
-                                              alt={reply.authorRef?.name || 'Member'}
-                                              className="w-5 h-5 rounded-full object-cover border border-[#2f9e44]"
-                                            />
-                                            <span className="font-bold text-white text-[11px]">{reply.authorRef?.name || 'Member'}</span>
-                                            <span className="text-[9px] text-gray-500">{new Date(reply.createdAt).toLocaleTimeString()}</span>
-                                          </div>
-                                          <p className="text-[11px] text-gray-300 pl-7">{reply.content}</p>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-
-                      </TechCard>
-
-                      {/* Native Feed Banner Insertion after post #4 */}
-                      {index === 3 && (
+                      <PostCard
+                        post={post}
+                        currentMemberId={currentMemberId}
+                        user={user}
+                        onLike={handleLike}
+                        onBookmark={handleBookmark}
+                        onDelete={handleDeleteOwnPost}
+                        onReport={(p) => setReportingTarget({ targetType: 'post', targetId: p._id })}
+                        onOpenComments={handleOpenComments}
+                        onShare={handleShare}
+                        onImageClick={(url) => setLightboxUrl(url)}
+                      />
+                      {showPromoAfterThis && (
                         <InCampusPromo variant="feed" />
                       )}
                     </React.Fragment>
@@ -928,20 +901,20 @@ export default function CommunityFeed() {
 
           </section>
 
-          {/* ─── RIGHT SIDEBAR (DESKTOP TRENDING & COMMUNITY) ────────────────── */}
-          <aside className="lg:col-span-3 hidden lg:block space-y-6 sticky top-24 max-h-[calc(100vh-6.5rem)] overflow-y-auto pr-1">
+          {/* ─── RIGHT SIDEBAR (TRENDING & REAL ACTIVE MEMBERS) ──────────── */}
+          <aside className="lg:col-span-3 hidden lg:block space-y-6 sticky top-24 max-h-[calc(100vh-6.5rem)] overflow-y-auto pl-1">
             
-            {/* Trending Topics */}
+            {/* Trending Tags Card */}
             <div className="p-4 rounded-2xl bg-[#121721] border border-[#30363d] space-y-3">
               <span className="text-[10px] font-mono font-bold text-[#2f9e44] uppercase tracking-wider block border-b border-[#30363d]/60 pb-2">
-                03 // TRENDING TOPICS
+                TRENDING TOPICS
               </span>
 
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {trendingTopics.map((topic) => (
                   <button
                     key={topic.tag}
-                    onClick={() => setSelectedTag(topic.tag)}
+                    onClick={() => handleTagClick(topic.tag)}
                     className="w-full p-2 rounded-xl bg-[#0a0d12] border border-[#30363d] hover:border-[#2f9e44]/50 flex items-center justify-between text-left transition-all group"
                   >
                     <div>
@@ -954,29 +927,41 @@ export default function CommunityFeed() {
               </div>
             </div>
 
-            {/* Active Community Members */}
+            {/* Active Community Members (Real MongoDB Data - Last 7 Days) */}
             <div className="p-4 rounded-2xl bg-[#121721] border border-[#30363d] space-y-3">
-              <span className="text-[10px] font-mono font-bold text-[#2f9e44] uppercase tracking-wider block border-b border-[#30363d]/60 pb-2">
-                04 // ACTIVE MEMBERS
-              </span>
-
-              <div className="space-y-2.5">
-                {activeMembers.map((m, idx) => (
-                  <div key={idx} className="flex items-center gap-3 p-1.5 rounded-xl hover:bg-[#18202c]">
-                    <img src={m.photo} alt={m.name} className="w-8 h-8 rounded-full object-cover border border-[#2f9e44]" />
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-white truncate">{m.name}</p>
-                      <p className="text-[10px] text-gray-400 truncate">{m.role}</p>
-                    </div>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between border-b border-[#30363d]/60 pb-2">
+                <span className="text-[10px] font-mono font-bold text-[#2f9e44] uppercase tracking-wider block">
+                  ACTIVE MEMBERS
+                </span>
+                <span className="text-[9px] font-mono text-gray-500">Last 7 Days</span>
               </div>
+
+              {loadingActiveMembers ? (
+                <div className="py-4 text-center text-xs font-mono text-gray-500">Loading active members...</div>
+              ) : activeMembers.length === 0 ? (
+                <div className="py-3 text-center text-xs font-mono text-gray-500 bg-[#0a0d12] rounded-xl p-3 border border-[#30363d]/40">
+                  No recent community activity yet.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {activeMembers.map((m) => (
+                    <div key={m._id || m.username} className="flex items-center justify-between p-1.5 rounded-xl hover:bg-[#18202c] transition-colors">
+                      <AuthorIdentity member={m} size="small" showTeam={false} className="min-w-0 flex-1" />
+                      {m.activityScore > 0 && (
+                        <span className="text-[10px] font-mono text-[#2f9e44] font-bold ml-1 flex-shrink-0">
+                          {m.activityScore} pts
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Featured Event Card */}
             <TechCard className="p-4 bg-gradient-to-br from-[#121721] to-[#142e16]/40 border-[#2f9e44]/40 space-y-3">
               <span className="text-[10px] font-mono font-bold text-[#2f9e44] uppercase tracking-wider block">
-                05 // FEATURED EVENT
+                FEATURED EVENT
               </span>
               <h4 className="text-xs font-bold text-white leading-snug">GFG Annual Campus Hackathon 2026</h4>
               <p className="text-[10px] text-gray-300">Registration open for 36-hour competitive coding & web dev sprint.</p>
@@ -993,71 +978,182 @@ export default function CommunityFeed() {
         </div>
       </main>
 
-      {/* ─── CREATE POST COMPOSER MODAL (INSTANT LOCAL PREVIEW & BG UPLOAD) ──── */}
+      {/* ─── CREATE POST COMPOSER MODAL (CHILD-EASY & FRIENDLY UX) ──── */}
       {isComposerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-          <div className="bg-[#161b22] border border-[#30363d] rounded-2xl w-full max-w-xl p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-md transition-all">
+          <div className="bg-[#121721] border border-[#30363d] rounded-t-3xl sm:rounded-2xl w-full max-w-xl max-h-[92vh] sm:max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-slide-up">
             
-            {/* Modal Header */}
-            <div className="flex justify-between items-center border-b border-[#30363d] pb-4">
-              <div>
-                <span className="text-[10px] font-mono font-bold text-[#2f9e44] uppercase tracking-wider block">
-                  CREATE POST
-                </span>
-                <h3 className="text-lg font-bold text-white">Share with Community</h3>
+            {/* Modal Header with User Identity Bar */}
+            <div className="p-4 sm:p-5 border-b border-[#30363d] flex items-center justify-between bg-[#161b22] flex-shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <img
+                  src={resolveAvatarUrl(authMember?.photo || user?.photo, authMember?.name || user?.username || 'You')}
+                  alt="Your avatar"
+                  className="w-10 h-10 rounded-full object-cover border border-[#2f9e44] flex-shrink-0"
+                />
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-white truncate">
+                    {authMember?.name || user?.username || 'Community Member'}
+                  </h3>
+                  <p className="text-[10px] font-mono text-gray-400 truncate">
+                    {authMember?.role || 'Campus Member'} • Share something with community
+                  </p>
+                </div>
               </div>
-              <button onClick={() => setIsComposerOpen(false)} className="text-gray-400 hover:text-white p-1">
+
+              <button
+                type="button"
+                onClick={() => setIsComposerOpen(false)}
+                className="text-gray-400 hover:text-white p-1.5 rounded-xl hover:bg-[#18202c] transition-colors flex-shrink-0"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreatePostSubmit} className="space-y-4 text-xs">
+            {/* Scrollable Form Body */}
+            <form onSubmit={handleCreatePostSubmit} className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 text-xs no-scrollbar">
               
-              {/* Category Picker */}
-              <div>
-                <label className="block text-gray-300 font-semibold mb-1">Post Category</label>
-                <select
-                  value={postType}
-                  onChange={e => setPostType(e.target.value)}
-                  className="w-full bg-[#0d1117] border border-[#30363d] rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-[#2f9e44]"
-                >
-                  <option value="Thought">📝 Thought / Note</option>
-                  <option value="Study Note">📚 Study Note / PDF Material</option>
-                  <option value="Question">❓ Question / Help Needed</option>
-                  <option value="Project">💻 Project Showcase</option>
-                  <option value="Achievement">🎉 Achievement / Milestone</option>
-                  <option value="Opportunity">💼 Placement / Internship Opportunity</option>
-                </select>
-              </div>
-
-              {/* Title */}
-              <div>
-                <label className="block text-gray-300 font-semibold mb-1">Title (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="Headline title for your post..."
-                  value={title}
-                  onChange={e => setTitle(e.target.value)}
-                  className="w-full bg-[#0d1117] border border-[#30363d] rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#2f9e44]"
-                />
-              </div>
-
-              {/* Body Content */}
-              <div>
-                <label className="block text-gray-300 font-semibold mb-1">Post Content *</label>
-                <textarea
-                  rows={4}
-                  required
-                  placeholder="Share your thoughts, study notes, question context, or project breakdown..."
-                  value={content}
-                  onChange={e => setContent(e.target.value)}
-                  className="w-full bg-[#0d1117] border border-[#30363d] rounded-xl p-3.5 text-white focus:outline-none focus:border-[#2f9e44]"
-                />
-              </div>
-
-              {/* Native File Upload Buttons */}
+              {/* Visual Category Selection Chips (What do you want to share?) */}
               <div className="space-y-2">
-                <label className="block text-gray-300 font-semibold">Media Attachment (Photo or PDF)</label>
+                <label className="block text-[11px] font-mono font-bold text-gray-400 uppercase tracking-wider">
+                  What do you want to share?
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {[
+                    { type: 'Thought', icon: '💭', label: 'Thought', desc: 'Share an idea or update' },
+                    { type: 'Question', icon: '❓', label: 'Question', desc: 'Ask community for help' },
+                    { type: 'Study Note', icon: '📚', label: 'Study Note', desc: 'Share notes or PDF' },
+                    { type: 'Project', icon: '💻', label: 'Project', desc: 'Show what you built' },
+                    { type: 'Achievement', icon: '🏆', label: 'Achievement', desc: 'Share your milestone' }
+                  ].map((item) => {
+                    const isSelected = postType === item.type;
+                    return (
+                      <button
+                        key={item.type}
+                        type="button"
+                        onClick={() => setPostType(item.type)}
+                        className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                          isSelected
+                            ? 'bg-[#2f9e44]/20 border-[#2f9e44] text-white shadow-md shadow-[#2f9e44]/10'
+                            : 'bg-[#0a0d12] border-[#30363d] text-gray-400 hover:text-white hover:bg-[#18202c]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 font-bold text-xs text-white">
+                          <span>{item.icon}</span>
+                          <span>{item.label}</span>
+                        </div>
+                        <p className="text-[10px] text-gray-400 leading-tight mt-1 truncate">{item.desc}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Dynamic Title Input based on selected postType */}
+              {postType !== 'Thought' && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-gray-300">
+                      {postType === 'Question'
+                        ? 'What do you want to ask? *'
+                        : postType === 'Study Note'
+                        ? 'What are your notes about? *'
+                        : postType === 'Project'
+                        ? 'What did you build? *'
+                        : 'What did you achieve? *'}
+                    </label>
+                    <span className={`text-[10px] font-mono ${title.length > 100 ? 'text-amber-400 font-bold' : 'text-gray-500'}`}>
+                      {title.length} / 120 chars
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    maxLength={120}
+                    required={postType !== 'Thought'}
+                    placeholder={
+                      postType === 'Question'
+                        ? 'e.g. How does Dijkstra algorithm handle negative weights?'
+                        : postType === 'Study Note'
+                        ? 'e.g. Binary Trees Revision Notes'
+                        : postType === 'Project'
+                        ? 'e.g. Portfolio Website / GFG Bot'
+                        : 'e.g. Completed 100 Days of Code'
+                    }
+                    value={title}
+                    onChange={e => setTitle(e.target.value)}
+                    className="w-full bg-[#0a0d12] border border-[#30363d] rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-[#2f9e44]"
+                  />
+                </div>
+              )}
+
+              {/* Main Content Body with Live 500-Word Counter */}
+              <div>
+                {(() => {
+                  const words = content.trim().split(/\s+/).filter(Boolean).length;
+                  const isWarning = words >= 450 && words < 500;
+                  const isLimit = words >= 500;
+
+                  return (
+                    <>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-gray-300">
+                          {postType === 'Thought'
+                            ? "What's on your mind? *"
+                            : postType === 'Question'
+                            ? 'Add details *'
+                            : postType === 'Study Note'
+                            ? 'Add your notes or explanation *'
+                            : postType === 'Project'
+                            ? 'Tell us about it *'
+                            : 'Tell everyone about it *'}
+                        </label>
+                        <span className={`text-[10px] font-mono font-bold ${
+                          isLimit
+                            ? 'text-red-400'
+                            : isWarning
+                            ? 'text-amber-400'
+                            : 'text-gray-400'
+                        }`}>
+                          {isLimit
+                            ? `${words} / 500 words — Maximum reached`
+                            : `${words} / 500 words`}
+                        </span>
+                      </div>
+
+                      <textarea
+                        rows={4}
+                        required
+                        placeholder={
+                          postType === 'Thought'
+                            ? 'Write something...'
+                            : postType === 'Question'
+                            ? 'Explain your question so others can help...'
+                            : postType === 'Study Note'
+                            ? 'Write a short explanation or key takeaways...'
+                            : postType === 'Project'
+                            ? 'What does your project do? What tech stack did you use?'
+                            : 'Share your experience, certificate, or learnings...'
+                        }
+                        value={content}
+                        onChange={e => setContent(e.target.value)}
+                        className={`w-full bg-[#0a0d12] border rounded-xl p-3.5 text-white placeholder-gray-500 focus:outline-none resize-none transition-colors ${
+                          isLimit
+                            ? 'border-red-500 focus:border-red-500'
+                            : isWarning
+                            ? 'border-amber-500/60 focus:border-amber-500'
+                            : 'border-[#30363d] focus:border-[#2f9e44]'
+                        }`}
+                      />
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Media Action Buttons & Previews */}
+              <div className="space-y-2 pt-1">
+                <label className="block text-[11px] font-mono font-bold text-gray-400 uppercase tracking-wider">
+                  Add something
+                </label>
                 
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -1069,9 +1165,10 @@ export default function CommunityFeed() {
                         fileInputRef.current.click();
                       }
                     }}
-                    className="px-4 py-2 rounded-xl bg-[#21262d] text-gray-200 border border-[#30363d] flex items-center gap-2 font-semibold hover:border-[#2f9e44]"
+                    className="px-3.5 py-2 rounded-xl bg-[#0a0d12] text-gray-200 border border-[#30363d] flex items-center gap-2 font-bold hover:border-[#2f9e44] hover:bg-[#18202c] transition-colors"
                   >
-                    <ImageIcon className="w-4 h-4 text-[#2f9e44]" /> Add Photo from Device
+                    <ImageIcon className="w-4 h-4 text-[#2f9e44]" />
+                    <span>Photo</span>
                   </button>
 
                   <button
@@ -1083,101 +1180,179 @@ export default function CommunityFeed() {
                         fileInputRef.current.click();
                       }
                     }}
-                    className="px-4 py-2 rounded-xl bg-[#21262d] text-gray-200 border border-[#30363d] flex items-center gap-2 font-semibold hover:border-[#06b6d4]"
+                    className="px-3.5 py-2 rounded-xl bg-[#0a0d12] text-gray-200 border border-[#30363d] flex items-center gap-2 font-bold hover:border-[#06b6d4] hover:bg-[#18202c] transition-colors"
                   >
-                    <FileText className="w-4 h-4 text-[#06b6d4]" /> Attach PDF Note
+                    <FileText className="w-4 h-4 text-[#06b6d4]" />
+                    <span>PDF Notes</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowLinkInput(!showLinkInput)}
+                    className={`px-3.5 py-2 rounded-xl bg-[#0a0d12] text-gray-200 border border-[#30363d] flex items-center gap-2 font-bold hover:border-yellow-400 hover:bg-[#18202c] transition-colors ${
+                      showLinkInput || externalUrl ? 'border-yellow-400/60 text-yellow-400' : ''
+                    }`}
+                  >
+                    <ExternalLink className="w-4 h-4 text-yellow-400" />
+                    <span>Link</span>
                   </button>
                 </div>
 
-                {/* Instant Local Preview & Upload Progress Indicator */}
+                {/* External Link Input Drawer */}
+                {(showLinkInput || externalUrl) && (
+                  <div className="pt-1 animate-fade-in">
+                    <input
+                      type="url"
+                      placeholder="Paste website, GitHub or project link (https://...)"
+                      value={externalUrl}
+                      onChange={e => setExternalUrl(e.target.value)}
+                      className="w-full bg-[#0a0d12] border border-[#30363d] rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-[#2f9e44]"
+                    />
+                  </div>
+                )}
+
+                {/* Visual Attachment Preview Card */}
                 {filePreviewUrl && (
-                  <div className="p-3.5 rounded-xl bg-[#0d1117] border border-[#30363d] space-y-2 relative">
+                  <div className="p-3.5 rounded-xl bg-[#0a0d12] border border-[#30363d] space-y-2 relative animate-fade-in">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5 min-w-0">
                         {fileType === 'pdf' ? (
-                          <FileText className="w-6 h-6 text-[#06b6d4] flex-shrink-0" />
+                          <div className="p-2 rounded-lg bg-[#06b6d4]/15 border border-[#06b6d4]/30 text-[#06b6d4] flex-shrink-0">
+                            <FileText className="w-5 h-5" />
+                          </div>
                         ) : (
-                          <ImageIcon className="w-6 h-6 text-[#2f9e44] flex-shrink-0" />
+                          <div className="p-2 rounded-lg bg-[#2f9e44]/15 border border-[#2f9e44]/30 text-[#2f9e44] flex-shrink-0">
+                            <ImageIcon className="w-5 h-5" />
+                          </div>
                         )}
                         <div className="min-w-0">
-                          <p className="font-bold text-white truncate">{selectedFile?.name || 'Attached file'}</p>
+                          <p className="font-bold text-white truncate text-xs">{selectedFile?.name || 'Attached document'}</p>
                           <p className="text-[10px] text-gray-400 font-mono">
-                            {selectedFile ? `${(selectedFile.size / 1024).toFixed(1)} KB` : 'Local Preview'}
+                            {selectedFile ? `${fileType.toUpperCase()} • ${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB` : 'Attached'}
                           </p>
                         </div>
                       </div>
 
-                      <button type="button" onClick={handleRemoveMedia} className="text-gray-400 hover:text-red-400 p-1">
-                        <X className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {fileType === 'image' && (
+                          <button
+                            type="button"
+                            onClick={handleOpenAdjustPostCrop}
+                            className="px-2.5 py-1 rounded-lg bg-[#18202c] hover:bg-[#2f9e44] text-white text-[11px] font-bold border border-[#30363d] flex items-center gap-1 transition-colors"
+                          >
+                            <Crop className="w-3 h-3" /> Adjust Crop
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleRemoveMedia}
+                          className="text-gray-400 hover:text-red-400 p-1.5 rounded-lg hover:bg-[#18202c]"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Image Preview */}
+                    {/* Image Preview Window */}
                     {fileType === 'image' && filePreviewUrl && (
-                      <div className="rounded-lg overflow-hidden max-h-40 border border-[#30363d]">
-                        <img src={filePreviewUrl} alt="Upload preview" className="w-full h-full object-cover max-h-40" />
+                      <div className="relative group rounded-xl overflow-hidden max-h-48 border border-[#30363d] bg-[#0d1117]">
+                        <img src={filePreviewUrl} alt="Photo preview" className="w-full h-full object-contain max-h-48" />
                       </div>
                     )}
 
-                    {/* Upload Status Indicator */}
+                    {/* Simple Upload Status Feedback */}
                     {isUploading ? (
                       <div className="space-y-1 pt-1">
                         <div className="flex items-center justify-between text-[10px] text-[#2f9e44] font-mono font-bold">
                           <span className="flex items-center gap-1">
-                            <Loader2 className="w-3 h-3 animate-spin" /> Uploading to Cloudinary...
+                            <Loader2 className="w-3 h-3 animate-spin" /> Uploading {fileType === 'pdf' ? 'PDF' : 'photo'}...
                           </span>
                           <span>{uploadProgress}%</span>
                         </div>
-                        <div className="w-full h-1.5 bg-[#21262d] rounded-full overflow-hidden">
+                        <div className="w-full h-1 bg-[#21262d] rounded-full overflow-hidden">
                           <div className="h-full bg-[#2f9e44] transition-all duration-200" style={{ width: `${uploadProgress}%` }} />
                         </div>
                       </div>
                     ) : (
                       <div className="text-[10px] text-emerald-400 font-mono font-bold flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> File ready for publishing
+                        <CheckCircle2 className="w-3.5 h-3.5" /> {fileType === 'pdf' ? 'PDF ready ✓' : 'Photo ready ✓'}
                       </div>
                     )}
                   </div>
                 )}
               </div>
 
-              {/* Optional External URL */}
-              <div>
-                <label className="block text-gray-300 font-semibold mb-1">External Link (Optional)</label>
-                <input
-                  type="url"
-                  placeholder="https://github.com/... or https://..."
-                  value={externalUrl}
-                  onChange={e => setExternalUrl(e.target.value)}
-                  className="w-full bg-[#0d1117] border border-[#30363d] rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#2f9e44]"
-                />
-              </div>
+              {/* Topics / Tags Section */}
+              <div className="space-y-2 pt-1">
+                <label className="block text-[11px] font-mono font-bold text-gray-400 uppercase tracking-wider">
+                  Add topics
+                </label>
 
-              {/* Tags */}
-              <div>
-                <label className="block text-gray-300 font-semibold mb-1">Tags (Comma separated)</label>
+                {/* Suggested Chips */}
+                <div className="flex flex-wrap gap-1.5">
+                  {['DSA', 'WebDevelopment', 'AI', 'Placement', 'Projects', 'Hackathon'].map((topic) => {
+                    const isSelected = selectedTopics.includes(topic);
+                    return (
+                      <button
+                        key={topic}
+                        type="button"
+                        onClick={() => toggleTopic(topic)}
+                        className={`px-2.5 py-1 rounded-xl text-xs font-mono font-bold transition-all ${
+                          isSelected
+                            ? 'bg-[#2f9e44] text-white shadow-md border border-[#2f9e44]'
+                            : 'bg-[#0a0d12] text-gray-400 hover:text-white border border-[#30363d]'
+                        }`}
+                      >
+                        #{topic} {isSelected ? '✓' : '+'}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Custom Tag Input */}
                 <input
                   type="text"
-                  placeholder="DSA, WebDev, Placement, AI"
-                  value={tagsInput}
-                  onChange={e => setTagsInput(e.target.value)}
-                  className="w-full bg-[#0d1117] border border-[#30363d] rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#2f9e44]"
+                  placeholder="Type another topic and press Enter..."
+                  value={customTagText}
+                  onChange={e => setCustomTagText(e.target.value)}
+                  onKeyDown={handleAddCustomTopic}
+                  className="w-full bg-[#0a0d12] border border-[#30363d] rounded-xl px-3.5 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#2f9e44]"
                 />
               </div>
 
-              {/* Submit Button */}
+            </form>
+
+            {/* Sticky Action Footer inside Modal */}
+            <div className="p-4 sm:p-5 border-t border-[#30363d] bg-[#161b22] flex items-center justify-between gap-3 flex-shrink-0">
               <button
-                type="submit"
-                disabled={isUploading}
-                className={`w-full py-3 rounded-xl gradient-button font-bold text-xs shadow-lg flex items-center justify-center gap-2 ${
-                  isUploading ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
+                type="button"
+                onClick={() => setIsComposerOpen(false)}
+                className="px-4 py-2.5 rounded-xl bg-[#18202c] hover:bg-[#30363d] text-gray-300 text-xs font-bold transition-colors"
               >
-                {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                <span>{isUploading ? 'Uploading Attachment...' : 'Publish Community Post'}</span>
+                Cancel
               </button>
 
-            </form>
+              <button
+                type="submit"
+                onClick={handleCreatePostSubmit}
+                disabled={isUploading || isPublishing || !content.trim() || (postType !== 'Thought' && !title.trim())}
+                className={`px-6 py-2.5 rounded-xl gradient-button text-xs font-bold shadow-lg flex items-center gap-2 transition-all ${
+                  isUploading || isPublishing || !content.trim() || (postType !== 'Thought' && !title.trim())
+                    ? 'opacity-50 cursor-not-allowed pointer-events-none'
+                    : ''
+                }`}
+              >
+                {(isUploading || isPublishing) ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <Send className="w-4 h-4" />}
+                <span>
+                  {isUploading
+                    ? `Uploading ${fileType === 'pdf' ? 'PDF' : 'Photo'}...`
+                    : isPublishing
+                    ? 'Publishing Post...'
+                    : 'Publish Post'}
+                </span>
+              </button>
+            </div>
+
           </div>
         </div>
       )}
@@ -1234,6 +1409,41 @@ export default function CommunityFeed() {
           onSuccess={(msg) => showToast(msg)}
         />
       )}
+
+      {/* Fullscreen Image Lightbox Modal */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in cursor-pointer"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setLightboxUrl(null)}
+            className="absolute top-4 right-4 p-3 rounded-full bg-black/60 hover:bg-black text-white text-xs font-bold border border-white/20 transition-all shadow-xl z-50 flex items-center gap-2"
+          >
+            <X className="w-5 h-5" /> Close Preview
+          </button>
+          <img
+            src={lightboxUrl}
+            alt="Enlarged Post View"
+            className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl border border-[#30363d] pointer-events-auto"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+
+      {/* Image Crop Modal for Community Posts */}
+      <ImageCropModal
+        isOpen={cropModalOpen}
+        imageSrc={cropSource}
+        presetKey="communityPost"
+        title="Adjust Post Photo Framing"
+        onClose={() => {
+          setCropModalOpen(false);
+          setCropSource(null);
+        }}
+        onApplyCrop={handleApplyCroppedPostImage}
+      />
 
       <Footer />
     </div>

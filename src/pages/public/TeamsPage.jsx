@@ -7,6 +7,8 @@ import { MOCK_FACULTY } from '../../data/faculty';
 import { Users, Code2, Palette, Calendar, Megaphone, Share2, Mail, Linkedin, Github, Instagram, Award, GraduationCap } from 'lucide-react';
 import TechHeader from '../../components/common/TechHeader';
 import TechCard from '../../components/common/TechCard';
+import cacheService from '../../services/cacheService';
+import TeamMemberModal from '../../components/common/TeamMemberModal';
 
 const ICON_MAP = {
   Users,
@@ -18,41 +20,48 @@ const ICON_MAP = {
 };
 
 export default function TeamsPage() {
-  const [teams, setTeams] = useState([]);
-  const [faculty, setFaculty] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [teams, setTeams] = useState(() => {
+    const cached = cacheService.get('teams', 1800000); // 30 min TTL
+    return cached?.data || MOCK_TEAMS;
+  });
+  const [faculty, setFaculty] = useState(() => {
+    const cached = cacheService.get('faculty', 1800000);
+    return cached?.data || MOCK_FACULTY;
+  });
+  const [loading, setLoading] = useState(() => {
+    const cachedTeams = cacheService.get('teams', 1800000);
+    return !(cachedTeams && cachedTeams.data && cachedTeams.data.length > 0);
+  });
+
+  // Mobile Team Member Details Modal State
+  const [selectedMember, setSelectedMember] = useState(null);
+  const [selectedTeamName, setSelectedTeamName] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const handleOpenDetails = (member, teamName) => {
+    if (!member) return;
+    setSelectedMember(member);
+    setSelectedTeamName(teamName);
+    setIsModalOpen(true);
+  };
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        // Teams: use API if available, ALWAYS fallback to MOCK_TEAMS (GFG-CMP-Content)
-        let teamsData = MOCK_TEAMS;
-        try {
-          const teamsRes = await api.get('/teams');
-          if (teamsRes.data?.data?.length > 0) {
-            teamsData = teamsRes.data.data;
-          }
-        } catch { /* API unavailable — use frontend content */ }
-
-        // Faculty: same pattern
-        let facultyData = MOCK_FACULTY;
-        try {
-          const facultyRes = await api.get('/faculty');
-          if (facultyRes.data?.data?.length > 0) {
-            facultyData = facultyRes.data.data;
-          }
-        } catch { /* API unavailable — use frontend content */ }
-
+    cacheService.dedupe('teams', () => api.get('/teams'))
+      .then((teamsRes) => {
+        const teamsData = teamsRes.data?.data?.length > 0 ? teamsRes.data.data : MOCK_TEAMS;
         setTeams(teamsData);
+        cacheService.set('teams', teamsData);
+      })
+      .catch(() => setTeams(MOCK_TEAMS))
+      .finally(() => setLoading(false));
+
+    cacheService.dedupe('faculty', () => api.get('/faculty'))
+      .then((facultyRes) => {
+        const facultyData = facultyRes.data?.data?.length > 0 ? facultyRes.data.data : MOCK_FACULTY;
         setFaculty(facultyData);
-      } catch (err) {
-        console.warn('Failed fetching teams data:', err);
-        setTeams(MOCK_TEAMS);
-        setFaculty(MOCK_FACULTY);
-      }
-      setLoading(false);
-    };
-    load();
+        cacheService.set('faculty', facultyData);
+      })
+      .catch(() => setFaculty(MOCK_FACULTY));
   }, []);
 
   return (
@@ -62,11 +71,11 @@ export default function TeamsPage() {
         
         {/* Page Header */}
         <TechHeader
-          tag="02 // COMMUNITY MODULES"
-          title="Faculty Advisors & Team Leads"
-          description="Meet the esteemed faculty mentors and dedicated student leaders behind GeeksforGeeks Campus Body, Jamia Hamdard."
+          tag="OUR TEAMS"
+          title="Faculty Guidance & Team Leads"
+          description="Meet the faculty mentors and dedicated student leaders behind GeeksforGeeks Campus Body at Jamia Hamdard."
           count={teams.length}
-          countLabel="Active Modules"
+          countLabel="Teams"
         />
 
         {/* ─── Faculty Coordinators Section (2-Col Grid on Mobile) ─────────── */}
@@ -76,45 +85,72 @@ export default function TeamsPage() {
               <GraduationCap className="w-5 h-5" />
             </div>
             <div>
-              <span className="text-[10px] font-mono text-[#2f9e44] uppercase tracking-wider font-bold block">01 // ACADEMIC MENTORSHIP</span>
-              <h2 className="text-lg sm:text-xl font-bold text-white">Faculty Coordinators</h2>
+              <span className="text-[10px] font-mono text-[#2f9e44] uppercase tracking-wider font-bold block">FACULTY GUIDANCE</span>
+              <h2 className="text-lg sm:text-xl font-bold text-white">Faculty Guidance</h2>
             </div>
           </div>
 
           {/* 2-Column Mobile Grid for Faculty */}
           <div className="grid grid-cols-2 gap-3 sm:gap-6">
-            {faculty.map((f, idx) => (
-              <TechCard
-                key={f._id || idx}
-                className="p-3.5 sm:p-6 border-[#30363d] bg-gradient-to-br from-[#121721] to-[#0a0d12] flex flex-col justify-between space-y-3 sm:space-y-6"
-              >
-                <div className="flex flex-col sm:flex-row items-center sm:items-start gap-3 sm:gap-6">
-                  <img
-                    src={f.photo || f.memberRef?.photo}
-                    alt={`${f.name || f.memberRef?.name}, Faculty Coordinator`}
-                    loading="lazy"
-                    style={{ objectPosition: f.imagePosition || 'top' }}
-                    className="w-full h-32 sm:w-36 sm:h-40 rounded-xl object-cover border-2 border-[#2f9e44] shadow-md flex-shrink-0"
-                  />
-                  <div className="space-y-1 sm:space-y-2 text-center sm:text-left min-w-0 w-full">
-                    <span className="text-[9px] sm:text-[10px] font-mono font-bold text-[#2f9e44] uppercase tracking-wider bg-[#2f9e44]/15 border border-[#2f9e44]/30 px-2 py-0.5 rounded inline-block">
-                      Faculty Coordinator
-                    </span>
-                    <h3 className="text-xs sm:text-2xl font-bold text-white leading-tight truncate">{f.name || f.memberRef?.name}</h3>
-                    <p className="text-[10px] sm:text-sm font-semibold text-gray-300 line-clamp-1">{f.designation}</p>
-                    <p className="text-[10px] sm:text-xs text-gray-400 line-clamp-1">{f.department || f.institution}</p>
-                    
-                    {f.email && (
-                      <a
-                        href={`mailto:${f.email}`}
-                        className="inline-flex items-center gap-1 text-[10px] sm:text-xs text-[#2f9e44] hover:underline pt-0.5 truncate"
-                      >
-                        <Mail className="w-3 h-3 flex-shrink-0" />
-                        <span className="truncate">{f.email}</span>
-                      </a>
-                    )}
+            {faculty.map((f, idx) => {
+              const facObj = {
+                name: f.name || f.memberRef?.name,
+                title: 'Faculty Coordinator',
+                photo: f.photo || f.memberRef?.photo,
+                imagePosition: f.imagePosition || 'top',
+                message: [
+                  f.designation,
+                  f.department || f.institution,
+                  f.about
+                ].filter(Boolean).join(' • '),
+                socials: {
+                  email: f.email,
+                  linkedin: f.linkedin
+                }
+              };
+
+              return (
+                <TechCard
+                  key={f._id || idx}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleOpenDetails(facObj, 'Faculty Guidance')}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleOpenDetails(facObj, 'Faculty Guidance');
+                    }
+                  }}
+                  className="p-3.5 sm:p-6 border-[#30363d] bg-gradient-to-br from-[#121721] to-[#0a0d12] flex flex-col justify-between space-y-3 sm:space-y-6 cursor-pointer active:scale-[0.985] transition-transform"
+                >
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-3 sm:gap-6">
+                    <img
+                      src={f.photo || f.memberRef?.photo}
+                      alt={`${f.name || f.memberRef?.name}, Faculty Coordinator`}
+                      loading="lazy"
+                      style={{ objectPosition: f.imagePosition || 'top' }}
+                      className="w-full h-32 sm:w-36 sm:h-40 rounded-xl object-cover border-2 border-[#2f9e44] shadow-md flex-shrink-0"
+                    />
+                    <div className="space-y-1 sm:space-y-2 text-center sm:text-left min-w-0 w-full">
+                      <span className="text-[9px] sm:text-[10px] font-mono font-bold text-[#2f9e44] uppercase tracking-wider bg-[#2f9e44]/15 border border-[#2f9e44]/30 px-2 py-0.5 rounded inline-block">
+                        Faculty Coordinator
+                      </span>
+                      <h3 className="text-xs sm:text-2xl font-bold text-white leading-tight truncate">{f.name || f.memberRef?.name}</h3>
+                      <p className="text-[10px] sm:text-sm font-semibold text-gray-300 line-clamp-1">{f.designation}</p>
+                      <p className="text-[10px] sm:text-xs text-gray-400 line-clamp-1">{f.department || f.institution}</p>
+                      
+                      {f.email && (
+                        <a
+                          href={`mailto:${f.email}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 text-[10px] sm:text-xs text-[#2f9e44] hover:underline pt-0.5 truncate"
+                        >
+                          <Mail className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{f.email}</span>
+                        </a>
+                      )}
+                    </div>
                   </div>
-                </div>
 
                 {/* Awards & Recognition */}
                 {f.awards && f.awards.length > 0 && (
@@ -133,9 +169,10 @@ export default function TeamsPage() {
                   </div>
                 )}
               </TechCard>
-            ))}
-          </div>
-        </section>
+            );
+          })}
+            </div>
+          </section>
 
         {/* ─── Student Teams & Leads (2-Col Mobile Grid per Team) ─────────── */}
         <section className="space-y-6 sm:space-y-8">
@@ -144,7 +181,7 @@ export default function TeamsPage() {
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <span className="text-[10px] font-mono text-[#2f9e44] uppercase tracking-wider font-bold block">02 // STUDENT LEADERSHIP</span>
+              <span className="text-[10px] font-mono text-[#2f9e44] uppercase tracking-wider font-bold block">STUDENT TEAMS</span>
               <h2 className="text-lg sm:text-xl font-bold text-white">Student Teams & Leads</h2>
             </div>
           </div>
@@ -180,14 +217,25 @@ export default function TeamsPage() {
                     {/* Member Cards (Lead & Co-Lead Paired Grid) */}
                     <div className={coLead ? "grid grid-cols-2 gap-3 sm:gap-6" : "grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6"}>
                       {lead && (
-                        <div className="bg-[#0a0d12] p-3.5 sm:p-6 rounded-2xl border border-[#2f9e44]/40 flex flex-col justify-between tech-corner space-y-3">
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => handleOpenDetails(lead, t.name)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleOpenDetails(lead, t.name);
+                            }
+                          }}
+                          className="bg-[#0a0d12] p-3.5 sm:p-6 rounded-2xl border border-[#2f9e44]/40 flex flex-col justify-between tech-corner space-y-3 cursor-pointer active:scale-[0.985] transition-transform"
+                        >
                           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-3 sm:gap-5">
                             <img
                               src={lead.photo}
                               alt={`${lead.name}, ${lead.title || 'Lead'}`}
                               loading="lazy"
-                              style={{ objectPosition: lead.imagePosition || 'top' }}
-                              className="w-full h-36 sm:w-36 sm:h-44 rounded-xl object-cover border-2 border-[#2f9e44] flex-shrink-0 shadow-md"
+                              style={{ objectPosition: lead.imagePosition || 'center 50%' }}
+                              className="w-full h-44 sm:w-36 sm:h-44 rounded-xl object-cover border-2 border-[#2f9e44] flex-shrink-0 shadow-md"
                             />
                             <div className="space-y-2 text-center sm:text-left min-w-0 w-full flex-1">
                               <span className="text-[9px] sm:text-[10px] font-mono font-bold uppercase tracking-wider text-white bg-[#2f9e44] px-2 py-0.5 rounded inline-block">
@@ -207,22 +255,22 @@ export default function TeamsPage() {
                           {lead.socials && (
                             <div className="flex flex-wrap justify-center sm:justify-start gap-1.5 sm:gap-2 pt-2 border-t border-[#30363d]">
                               {lead.socials.email && (
-                                <a href={`mailto:${lead.socials.email}`} target="_blank" rel="noreferrer" className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-[#2f9e44] transition-colors border border-[#30363d]" title="Email">
+                                <a href={`mailto:${lead.socials.email}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-[#2f9e44] transition-colors border border-[#30363d]" title="Email">
                                   <Mail className="w-3.5 h-3.5" />
                                 </a>
                               )}
                               {lead.socials.linkedin && (
-                                <a href={lead.socials.linkedin} target="_blank" rel="noreferrer" className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-[#0077b5] transition-colors border border-[#30363d]" title="LinkedIn">
+                                <a href={lead.socials.linkedin} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-[#0077b5] transition-colors border border-[#30363d]" title="LinkedIn">
                                   <Linkedin className="w-3.5 h-3.5" />
                                 </a>
                               )}
                               {lead.socials.github && (
-                                <a href={lead.socials.github} target="_blank" rel="noreferrer" className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-gray-700 transition-colors border border-[#30363d]" title="GitHub">
+                                <a href={lead.socials.github} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-gray-700 transition-colors border border-[#30363d]" title="GitHub">
                                   <Github className="w-3.5 h-3.5" />
                                 </a>
                               )}
                               {lead.socials.instagram && (
-                                <a href={lead.socials.instagram} target="_blank" rel="noreferrer" className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-[#e1306c] transition-colors border border-[#30363d]" title="Instagram">
+                                <a href={lead.socials.instagram} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-[#e1306c] transition-colors border border-[#30363d]" title="Instagram">
                                   <Instagram className="w-3.5 h-3.5" />
                                 </a>
                               )}
@@ -232,14 +280,25 @@ export default function TeamsPage() {
                       )}
 
                       {coLead && (
-                        <div className="bg-[#0a0d12] p-3.5 sm:p-6 rounded-2xl border border-[#30363d] flex flex-col justify-between tech-corner space-y-3">
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => handleOpenDetails(coLead, t.name)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleOpenDetails(coLead, t.name);
+                            }
+                          }}
+                          className="bg-[#0a0d12] p-3.5 sm:p-6 rounded-2xl border border-[#30363d] flex flex-col justify-between tech-corner space-y-3 cursor-pointer active:scale-[0.985] transition-transform"
+                        >
                           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-3 sm:gap-5">
                             <img
                               src={coLead.photo}
                               alt={`${coLead.name}, ${coLead.title || 'Co-Lead'}`}
                               loading="lazy"
-                              style={{ objectPosition: coLead.imagePosition || 'top' }}
-                              className="w-full h-36 sm:w-36 sm:h-44 rounded-xl object-cover border-2 border-[#30363d] flex-shrink-0 shadow-md"
+                              style={{ objectPosition: coLead.imagePosition || 'center 50%' }}
+                              className="w-full h-44 sm:w-36 sm:h-44 rounded-xl object-cover border-2 border-[#30363d] flex-shrink-0 shadow-md"
                             />
                             <div className="space-y-2 text-center sm:text-left min-w-0 w-full flex-1">
                               <span className="text-[9px] sm:text-[10px] font-mono font-bold uppercase tracking-wider text-gray-300 bg-[#18202c] border border-[#30363d] px-2 py-0.5 rounded inline-block">
@@ -259,22 +318,22 @@ export default function TeamsPage() {
                           {coLead.socials && (
                             <div className="flex flex-wrap justify-center sm:justify-start gap-1.5 sm:gap-2 pt-2 border-t border-[#30363d]">
                               {coLead.socials.email && (
-                                <a href={`mailto:${coLead.socials.email}`} target="_blank" rel="noreferrer" className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-[#2f9e44] transition-colors border border-[#30363d]" title="Email">
+                                <a href={`mailto:${coLead.socials.email}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-[#2f9e44] transition-colors border border-[#30363d]" title="Email">
                                   <Mail className="w-3.5 h-3.5" />
                                 </a>
                               )}
                               {coLead.socials.linkedin && (
-                                <a href={coLead.socials.linkedin} target="_blank" rel="noreferrer" className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-[#0077b5] transition-colors border border-[#30363d]" title="LinkedIn">
+                                <a href={coLead.socials.linkedin} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-[#0077b5] transition-colors border border-[#30363d]" title="LinkedIn">
                                   <Linkedin className="w-3.5 h-3.5" />
                                 </a>
                               )}
                               {coLead.socials.github && (
-                                <a href={coLead.socials.github} target="_blank" rel="noreferrer" className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-gray-700 transition-colors border border-[#30363d]" title="GitHub">
+                                <a href={coLead.socials.github} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-gray-700 transition-colors border border-[#30363d]" title="GitHub">
                                   <Github className="w-3.5 h-3.5" />
                                 </a>
                               )}
                               {coLead.socials.instagram && (
-                                <a href={coLead.socials.instagram} target="_blank" rel="noreferrer" className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-[#e1306c] transition-colors border border-[#30363d]" title="Instagram">
+                                <a href={coLead.socials.instagram} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="p-1.5 sm:p-2 rounded-lg bg-[#18202c] text-gray-300 hover:text-white hover:bg-[#e1306c] transition-colors border border-[#30363d]" title="Instagram">
                                   <Instagram className="w-3.5 h-3.5" />
                                 </a>
                               )}
@@ -291,6 +350,15 @@ export default function TeamsPage() {
         </section>
 
       </main>
+
+      {/* Mobile Team Member Details Modal */}
+      <TeamMemberModal
+        member={selectedMember}
+        teamName={selectedTeamName}
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+      />
+
       <Footer />
     </div>
   );

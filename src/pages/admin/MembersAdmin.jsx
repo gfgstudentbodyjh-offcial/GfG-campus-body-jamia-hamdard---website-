@@ -4,9 +4,11 @@ import MediaPicker from '../../components/admin/MediaPicker';
 import api from '../../services/api';
 import { useAdminTheme } from '../../context/AdminThemeContext';
 import { formatEventDate } from '../../utils/dateUtils';
+import { OFFICIAL_ROLE_GROUPS, getTeamNameFromRole } from '../../config/officialRoles';
 import {
   Upload, Download, Trash2, Edit3, Image as ImageIcon, Plus, X,
-  UserCheck, ShieldCheck, UserX, Clock, Award, Users
+  UserCheck, ShieldCheck, UserX, Clock, Award, Users, Eye, Building,
+  GraduationCap, Mail, Phone, Calendar, Loader2
 } from 'lucide-react';
 
 export default function MembersAdmin() {
@@ -17,8 +19,10 @@ export default function MembersAdmin() {
   const [roleFilter, setRoleFilter] = useState('All');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMediaPickerOpen, setIsMediaPickerOpen] = useState(false);
+  const [inspectMember, setInspectMember] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const filterOptions = ['All', 'Visitors', 'Members', 'Leads', 'Campus Ambassadors', 'Campus Mantri', 'Faculty', 'Inactive'];
+  const filterOptions = ['All', 'Visitors', 'Members', 'Leads', 'Co-Leads', 'Campus Ambassadors', 'Campus Mantri', 'Faculty', 'Inactive'];
 
   const [formData, setFormData] = useState({
     _id: '',
@@ -63,7 +67,8 @@ export default function MembersAdmin() {
   const filteredMembers = members.filter(m => {
     if (roleFilter === 'Visitors') return m.accountType === 'Visitor' || m.role === 'Visitor';
     if (roleFilter === 'Members') return m.accountType === 'Member';
-    if (roleFilter === 'Leads') return (m.role || '').toLowerCase().includes('lead');
+    if (roleFilter === 'Leads') return (m.role || '').toLowerCase().endsWith('lead') || (m.role || '').toLowerCase().includes('lead');
+    if (roleFilter === 'Co-Leads') return (m.role || '').toLowerCase().includes('co-lead');
     if (roleFilter === 'Campus Ambassadors') return (m.role || '').toLowerCase().includes('ambassador');
     if (roleFilter === 'Campus Mantri') return (m.role || '').toLowerCase().includes('mantri');
     if (roleFilter === 'Faculty') return (m.role || '').toLowerCase().includes('faculty');
@@ -114,6 +119,7 @@ export default function MembersAdmin() {
 
   const handleSaveMembership = async (e) => {
     e.preventDefault();
+    setIsSaving(true);
     try {
       if (formData._id) {
         await api.patch(`/members/${formData._id}/membership`, formData);
@@ -121,9 +127,11 @@ export default function MembersAdmin() {
         await api.post('/members', formData);
       }
       setIsModalOpen(false);
-      loadMembers();
+      await loadMembers();
     } catch (err) {
       alert('Failed saving member record: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -282,6 +290,17 @@ export default function MembersAdmin() {
                 Change Membership
               </button>
               <button
+                onClick={() => setInspectMember(m)}
+                className={`px-3 py-1 rounded-lg text-[10px] font-bold border transition-colors inline-flex items-center gap-1 ${
+                  isLight
+                    ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                    : 'bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500 hover:text-white'
+                }`}
+                title="Inspect Registered Signup Information"
+              >
+                <Eye className="w-3 h-3" /> Inspect
+              </button>
+              <button
                 onClick={() => handleDelete(m._id)}
                 className={`p-1.5 rounded-lg border transition-colors ${
                   isLight ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100' : 'bg-[#21262d] text-red-400 border-[#30363d] hover:bg-red-500/20'
@@ -420,22 +439,30 @@ export default function MembersAdmin() {
                     <label className={`block font-semibold mb-1 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>Official Role</label>
                     <select
                       value={formData.role || 'Member'}
-                      onChange={e => setFormData({ ...formData, role: e.target.value })}
+                      onChange={e => {
+                        const newRole = e.target.value;
+                        const derivedTeam = getTeamNameFromRole(newRole);
+                        setFormData({ ...formData, role: newRole, teamName: derivedTeam });
+                      }}
                       className={`w-full rounded-xl px-3 py-2 border text-xs font-bold focus:outline-none focus:border-[#2f9e44] ${
                         isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#161b22] border-[#30363d] text-white'
                       }`}
                     >
-                      <option value="Visitor">Visitor</option>
-                      <option value="Member">Member</option>
-                      <option value="Campus Ambassador">Campus Ambassador</option>
-                      <option value="Technical Lead">Technical Lead</option>
-                      <option value="Technical Member">Technical Member</option>
-                      <option value="Event Lead">Event Lead</option>
-                      <option value="Event Member">Event Member</option>
-                      <option value="PR Lead">PR Lead</option>
-                      <option value="Design Lead">Design Lead</option>
-                      <option value="Campus Mantri">Campus Mantri</option>
-                      <option value="Faculty Coordinator">Faculty Coordinator</option>
+                      {OFFICIAL_ROLE_GROUPS.map(g => (
+                        <optgroup key={g.group} label={g.group}>
+                          {g.roles.map(r => (
+                            <option key={r} value={r}>
+                              {r}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                      {/* Backward compatibility for legacy roles like Campus Ambassador */}
+                      {formData.role && !OFFICIAL_ROLE_GROUPS.some(g => g.roles.includes(formData.role)) && (
+                        <optgroup label="LEGACY ROLES">
+                          <option value={formData.role}>{formData.role}</option>
+                        </optgroup>
+                      )}
                     </select>
                   </div>
 
@@ -496,6 +523,154 @@ export default function MembersAdmin() {
         onSelectMedia={(url) => setFormData(prev => ({ ...prev, photo: url }))}
         currentFolder="Members"
       />
+
+      {/* Inspect User Signup Details Drawer */}
+      {inspectMember && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className={`w-full max-w-md h-full p-6 overflow-y-auto shadow-2xl transition-colors border-l flex flex-col justify-between ${
+            isLight ? 'bg-white border-gray-200 text-gray-900' : 'bg-[#161b22] border-[#30363d] text-white'
+          }`}>
+            <div className="space-y-6">
+              
+              {/* Drawer Header */}
+              <div className={`flex justify-between items-center border-b pb-4 ${isLight ? 'border-gray-200' : 'border-[#30363d]'}`}>
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-[#2f9e44]/10 border border-[#2f9e44]/30">
+                    <Eye className="w-5 h-5 text-[#2f9e44]" />
+                  </div>
+                  <div>
+                    <h3 className={`text-base font-extrabold ${isLight ? 'text-gray-900' : 'text-white'}`}>User Signup Inspection</h3>
+                    <p className={`text-xs ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Registered Platform Account Details</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setInspectMember(null)}
+                  className={`p-1.5 rounded-xl border transition-colors ${
+                    isLight ? 'border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-100' : 'border-[#30363d] text-gray-400 hover:text-white hover:bg-gray-800'
+                  }`}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* User Identity Card */}
+              <div className={`p-4 rounded-2xl border flex items-center gap-4 ${
+                isLight ? 'bg-gray-50 border-gray-200' : 'bg-[#0d1117] border-[#30363d]'
+              }`}>
+                <img
+                  src={inspectMember.photo || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'}
+                  alt="User Avatar"
+                  className="w-14 h-14 rounded-full object-cover border-2 border-[#2f9e44] shadow-md"
+                />
+                <div>
+                  <h4 className={`text-sm font-extrabold ${isLight ? 'text-gray-900' : 'text-white'}`}>{inspectMember.name}</h4>
+                  <p className={`text-xs font-mono ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                    @{inspectMember.username || (inspectMember.email ? inspectMember.email.split('@')[0] : 'user')}
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#2f9e44]/20 text-[#2f9e44] border border-[#2f9e44]/30">
+                      {inspectMember.role || inspectMember.accountType || 'Visitor'}
+                    </span>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                      inspectMember.membershipStatus === 'active' || inspectMember.status === 'Active'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-[#2f9e44]/20 dark:text-[#2f9e44] dark:border-[#2f9e44]/30'
+                        : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/20 dark:text-amber-400'
+                    }`}>
+                      {inspectMember.membershipStatus || inspectMember.status || 'pending'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* CONTACT DETAILS SECTION */}
+              <div className="space-y-2">
+                <h5 className={`text-xs font-extrabold uppercase tracking-wider ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Contact Information</h5>
+                <div className={`p-4 rounded-xl border space-y-3 text-xs ${isLight ? 'bg-white border-gray-200' : 'bg-[#0d1117] border-[#30363d]'}`}>
+                  <div className="flex items-center justify-between">
+                    <span className={`font-medium flex items-center gap-1.5 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                      <Mail className="w-3.5 h-3.5 text-[#2f9e44]" /> Email Address
+                    </span>
+                    <span className={`font-semibold ${isLight ? 'text-gray-900' : 'text-white'}`}>{inspectMember.email || '—'}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className={`font-medium flex items-center gap-1.5 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                      <Phone className="w-3.5 h-3.5 text-[#2f9e44]" /> Phone Number
+                    </span>
+                    <span className={`font-semibold ${isLight ? 'text-gray-900' : 'text-white'}`}>
+                      {inspectMember.phone || inspectMember.userRef?.phone || '—'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ACADEMIC & SIGNUP INFORMATION */}
+              <div className="space-y-2">
+                <h5 className={`text-xs font-extrabold uppercase tracking-wider ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Academic Signup Information</h5>
+                <div className={`p-4 rounded-xl border space-y-3 text-xs ${isLight ? 'bg-white border-gray-200' : 'bg-[#0d1117] border-[#30363d]'}`}>
+                  <div className="flex items-center justify-between">
+                    <span className={`font-medium flex items-center gap-1.5 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                      <GraduationCap className="w-3.5 h-3.5 text-[#2f9e44]" /> Jamia Hamdard Student
+                    </span>
+                    <span className={`font-bold px-2 py-0.5 rounded text-[10px] ${
+                      inspectMember.userRef?.institutionType === 'jamia_hamdard' || (inspectMember.college && inspectMember.college.toLowerCase().includes('jamia hamdard'))
+                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400'
+                        : 'bg-blue-50 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400'
+                    }`}>
+                      {inspectMember.userRef?.institutionType === 'jamia_hamdard' || (inspectMember.college && inspectMember.college.toLowerCase().includes('jamia hamdard')) ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className={`font-medium flex items-center gap-1.5 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                      <Building className="w-3.5 h-3.5 text-[#2f9e44]" /> Institution / College
+                    </span>
+                    <span className={`font-semibold text-right max-w-[200px] truncate ${isLight ? 'text-gray-900' : 'text-white'}`}>
+                      {inspectMember.userRef?.collegeName || inspectMember.college || 'Jamia Hamdard'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className={`font-medium ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Department / Course</span>
+                    <span className={`font-semibold ${isLight ? 'text-gray-900' : 'text-white'}`}>
+                      {inspectMember.userRef?.course || inspectMember.department || 'General'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ACCOUNT METADATA */}
+              <div className="space-y-2">
+                <h5 className={`text-xs font-extrabold uppercase tracking-wider ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Account Metadata</h5>
+                <div className={`p-4 rounded-xl border space-y-3 text-xs ${isLight ? 'bg-white border-gray-200' : 'bg-[#0d1117] border-[#30363d]'}`}>
+                  <div className="flex items-center justify-between">
+                    <span className={`font-medium ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Community Role</span>
+                    <span className={`font-semibold ${isLight ? 'text-gray-900' : 'text-white'}`}>{inspectMember.role || 'Visitor'}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className={`font-medium ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>Membership ID</span>
+                    <span className={`font-mono font-bold ${isLight ? 'text-gray-900' : 'text-white'}`}>{inspectMember.membershipId || '—'}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className={`font-medium flex items-center gap-1.5 ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                      <Calendar className="w-3.5 h-3.5 text-[#2f9e44]" /> Account Created / Joined
+                    </span>
+                    <span className={`font-semibold ${isLight ? 'text-gray-900' : 'text-white'}`}>
+                      {formatEventDate(inspectMember.createdAt || inspectMember.issueDate)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* SECURITY NOTICE FOOTER */}
+            <div className={`pt-4 border-t mt-6 text-[10px] text-center font-medium ${
+              isLight ? 'border-gray-200 text-gray-500' : 'border-[#30363d] text-gray-400'
+            }`}>
+              🔒 Passwords, hashes, PINs, and authentication secrets are strictly excluded for security.
+            </div>
+
+          </div>
+        </div>
+      )}
 
     </div>
   );

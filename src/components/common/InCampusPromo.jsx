@@ -10,7 +10,7 @@ export default function InCampusPromo({ variant = 'feed', className = '' }) {
       <TechCard cornerAccents={false} className={`p-4 bg-gradient-to-br from-[#121721] via-[#161226] to-[#1e1338] border-[#7c3aed]/40 hover:border-[#8b5cf6]/70 transition-all space-y-3 ${className}`}>
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-mono font-bold text-[#a78bfa] uppercase tracking-wider block">
-            06 // EXPLORE
+            EXPLORE
           </span>
           <span className="text-[9px] font-mono font-bold text-[#c4b5fd] bg-[#7c3aed]/20 px-2 py-0.5 rounded border border-[#7c3aed]/30">
             CAMPUS NETWORK

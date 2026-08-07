@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ContentCrudModule from '../../components/admin/ContentCrudModule';
 import api from '../../services/api';
+import cacheService from '../../services/cacheService';
 import { useAdminTheme } from '../../context/AdminThemeContext';
 import { formatEventDate } from '../../utils/dateUtils';
 import { Edit3, Trash2, Pin, Bell, ExternalLink, X, Plus } from 'lucide-react';
@@ -82,12 +83,16 @@ export default function AnnouncementsAdmin() {
     e.preventDefault();
     try {
       if (formData._id) {
-        await api.put(`/announcements/${formData._id}`, formData);
+        const res = await api.put(`/announcements/${formData._id}`, formData);
+        const updated = res.data.data;
+        setAnnouncements(prev => prev.map(a => a._id === formData._id ? (updated || { ...a, ...formData }) : a));
       } else {
-        await api.post('/announcements', formData);
+        const res = await api.post('/announcements', formData);
+        const created = res.data.data;
+        if (created) setAnnouncements(prev => [created, ...prev]);
       }
       setIsModalOpen(false);
-      loadAnnouncements();
+      cacheService.invalidate('announcements');
     } catch (err) {
       alert('Save failed: ' + (err.response?.data?.message || err.message));
     }
@@ -96,7 +101,11 @@ export default function AnnouncementsAdmin() {
   const handleTogglePin = async (id) => {
     try {
       await api.patch(`/announcements/${id}/pin`);
-      loadAnnouncements();
+      setAnnouncements(prev => prev.map(a => {
+        if (a._id === id) return { ...a, isPinned: !a.isPinned };
+        return a.isPinned ? { ...a, isPinned: false } : a;
+      }));
+      cacheService.invalidate('announcements');
     } catch (err) {
       alert('Toggle pin failed');
     }
@@ -106,7 +115,8 @@ export default function AnnouncementsAdmin() {
     const newStatus = (currentStatus === 'Published' || currentStatus === 'Active') ? 'Draft' : 'Published';
     try {
       await api.put(`/announcements/${id}`, { status: newStatus });
-      loadAnnouncements();
+      setAnnouncements(prev => prev.map(a => a._id === id ? { ...a, status: newStatus } : a));
+      cacheService.invalidate('announcements');
     } catch (err) {
       alert('Failed to update status');
     }
@@ -116,7 +126,8 @@ export default function AnnouncementsAdmin() {
     if (!window.confirm('Delete announcement permanently?')) return;
     try {
       await api.delete(`/announcements/${id}`);
-      loadAnnouncements();
+      setAnnouncements(prev => prev.filter(a => a._id !== id));
+      cacheService.invalidate('announcements');
     } catch (err) {
       alert('Delete failed');
     }

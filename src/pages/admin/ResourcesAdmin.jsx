@@ -1,9 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ContentCrudModule from '../../components/admin/ContentCrudModule';
 import api from '../../services/api';
+import cacheService from '../../services/cacheService';
 import { useAdminTheme } from '../../context/AdminThemeContext';
 import { formatEventDate } from '../../utils/dateUtils';
-import { Edit3, Trash2, X, Download, FileText, Link as LinkIcon, UploadCloud, Lock, Globe } from 'lucide-react';
+import { Edit3, Trash2, X, Download, FileText, Link as LinkIcon, UploadCloud, Lock, Globe, CheckCircle2, FileCheck, RefreshCw } from 'lucide-react';
+
+const formatFileSize = (bytes) => {
+  if (!bytes) return '';
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+};
 
 export default function ResourcesAdmin() {
   const { isLight } = useAdminTheme();
@@ -12,7 +20,12 @@ export default function ResourcesAdmin() {
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // PDF Upload state: local file + permanent server uploaded object
+  const [pdfFile, setPdfFile] = useState(null);
+  const [uploadedPdf, setUploadedPdf] = useState(null);
   const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [uploadError, setUploadError] = useState('');
 
   const pdfInputRef = useRef(null);
 
@@ -23,6 +36,7 @@ export default function ResourcesAdmin() {
     title: '',
     description: '',
     fileUrl: '',
+    publicId: '',
     resourceType: 'PDF',
     category: 'DSA',
     access: 'Public',
@@ -56,11 +70,15 @@ export default function ResourcesAdmin() {
   });
 
   const handleOpenAdd = () => {
+    setPdfFile(null);
+    setUploadedPdf(null);
+    setUploadError('');
     setFormData({
       _id: '',
       title: '',
       description: '',
       fileUrl: '',
+      publicId: '',
       resourceType: 'PDF',
       category: 'DSA',
       access: 'Public',
@@ -71,11 +89,16 @@ export default function ResourcesAdmin() {
   };
 
   const handleOpenEdit = (r) => {
+    setPdfFile(null);
+    setUploadError('');
+    const hasUrl = !!r.fileUrl;
+    setUploadedPdf(hasUrl ? { url: r.fileUrl, publicId: r.publicId || '', originalName: r.title || 'Attached PDF Document' } : null);
     setFormData({
       _id: r._id,
       title: r.title || '',
       description: r.description || '',
       fileUrl: r.fileUrl || '',
+      publicId: r.publicId || '',
       resourceType: r.resourceType || 'PDF',
       category: r.category || 'DSA',
       access: r.access || 'Public',
@@ -89,20 +112,62 @@ export default function ResourcesAdmin() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
+      alert('Please select a valid PDF file (.pdf format).');
+      return;
+    }
+
+    setPdfFile(file);
     setUploadingPdf(true);
+    setUploadError('');
+
     const body = new FormData();
     body.append('file', file);
-    body.append('type', 'raw');
+    body.append('folder', 'Resources');
 
     try {
-      const res = await api.post('/media/upload', body, {
+      // IMPORTANT: Use /media/upload-pdf (resource_type:'raw') NOT /media/upload (resource_type:'auto')
+      // Cloudinary with 'auto' classifies PDFs as 'image' and returns image/upload URLs,
+      // which cause "Failed to load PDF document" because the browser receives wrong Content-Type.
+      // /upload-pdf forces resource_type:'raw' producing raw/upload URLs with Content-Type: application/pdf.
+      const res = await api.post('/media/upload-pdf', body, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      const pdfUrl = res.data?.url || '';
-      setFormData(prev => ({ ...prev, fileUrl: pdfUrl }));
-      alert('PDF uploaded successfully!');
+
+      // Extract permanent URL from canonical response shape first
+      const media = res.data?.media || res.data?.data;
+      const permanentUrl = media?.url || res.data?.url;
+      const publicId = media?.publicId || res.data?.publicId || '';
+      const fileResourceType = media?.resourceType || 'raw';
+
+      if (!permanentUrl) {
+        throw new Error('Server returned no permanent PDF URL');
+      }
+
+      // Verify it is a real Cloudinary HTTPS URL (not a blob or localhost path)
+      if (permanentUrl.startsWith('blob:') || permanentUrl.startsWith('file:')) {
+        throw new Error('Server returned a temporary browser URL. PDF was not uploaded to Cloudinary.');
+      }
+
+      const uploadedObj = {
+        url: permanentUrl,
+        publicId,
+        fileResourceType,
+        originalName: file.name,
+        bytes: file.size
+      };
+
+      setUploadedPdf(uploadedObj);
+      setFormData(prev => ({
+        ...prev,
+        fileUrl: permanentUrl,
+        publicId
+      }));
+
     } catch (err) {
-      alert('PDF upload failed: ' + (err.response?.data?.message || err.message));
+      console.error('[ResourcesAdmin] PDF Upload Error:', err);
+      setUploadedPdf(null);
+      setUploadError(err.response?.data?.message || err.message || 'PDF upload failed. Please try again.');
     } finally {
       setUploadingPdf(false);
     }
@@ -110,18 +175,37 @@ export default function ResourcesAdmin() {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!formData.fileUrl && formData.resourceType === 'PDF') {
+
+    if (uploadingPdf) {
+      alert('Please wait for the PDF upload to finish before saving.');
+      return;
+    }
+
+    const currentUrl = uploadedPdf?.url || formData.fileUrl;
+
+    if (formData.resourceType === 'PDF' && !currentUrl) {
       alert('Please upload a PDF file from your device first.');
       return;
     }
-    if (!formData.fileUrl && (formData.resourceType === 'Link' || formData.resourceType === 'Video')) {
+
+    if ((formData.resourceType === 'Link' || formData.resourceType === 'Video') && !currentUrl) {
       alert('Please provide a valid Resource URL.');
       return;
     }
 
     const payload = {
-      ...formData,
-      tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean)
+      title: formData.title.trim(),
+      description: formData.description.trim(),
+      fileUrl: currentUrl,
+      publicId: uploadedPdf?.publicId || formData.publicId || '',
+      fileResourceType: uploadedPdf?.fileResourceType || 'raw',  // stored for correct Cloudinary deletion
+      resourceType: formData.resourceType || 'PDF',
+      category: formData.category || 'DSA',
+      access: formData.access || 'Public',
+      status: formData.status || 'Published',
+      tags: typeof formData.tags === 'string'
+        ? formData.tags.split(',').map(t => t.trim()).filter(Boolean)
+        : formData.tags || []
     };
 
     try {
@@ -131,6 +215,7 @@ export default function ResourcesAdmin() {
         await api.post('/resources', payload);
       }
       setIsModalOpen(false);
+      cacheService.invalidate('resources');
       loadResources();
     } catch (err) {
       alert('Save failed: ' + (err.response?.data?.message || err.message));
@@ -141,11 +226,14 @@ export default function ResourcesAdmin() {
     if (!window.confirm('Delete learning resource permanently?')) return;
     try {
       await api.delete(`/resources/${id}`);
-      loadResources();
+      setResources(prev => prev.filter(r => r._id !== id));
+      cacheService.invalidate('resources');
     } catch (err) {
       alert('Delete failed');
     }
   };
+
+  const currentFileUrl = uploadedPdf?.url || formData.fileUrl;
 
   return (
     <div className="space-y-6">
@@ -155,7 +243,7 @@ export default function ResourcesAdmin() {
         type="file"
         ref={pdfInputRef}
         className="hidden"
-        accept="application/pdf"
+        accept="application/pdf,.pdf"
         onChange={handlePdfFileChange}
       />
 
@@ -293,7 +381,14 @@ export default function ResourcesAdmin() {
                   <label className={`block font-semibold mb-1 ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>Resource Type</label>
                   <select
                     value={formData.resourceType}
-                    onChange={e => setFormData({ ...formData, resourceType: e.target.value, fileUrl: '' })}
+                    onChange={e => {
+                      const newType = e.target.value;
+                      setFormData({ ...formData, resourceType: newType });
+                      if (newType !== 'PDF') {
+                        setPdfFile(null);
+                        setUploadedPdf(null);
+                      }
+                    }}
                     className={`w-full rounded-xl px-3 py-2 border text-xs font-semibold focus:outline-none focus:border-[#2f9e44] ${
                       isLight ? 'bg-white border-gray-300 text-gray-900' : 'bg-[#0d1117] border-[#30363d] text-white'
                     }`}
@@ -306,25 +401,70 @@ export default function ResourcesAdmin() {
                 </div>
               </div>
 
-              {/* PDF FILE UPLOD vs EXTERNAL LINK */}
+              {/* PDF FILE UPLOAD vs EXTERNAL LINK */}
               {formData.resourceType === 'PDF' ? (
-                <div className={`p-4 rounded-xl border space-y-2 ${
+                <div className={`p-4 rounded-xl border space-y-3 ${
                   isLight ? 'bg-slate-50 border-gray-200' : 'bg-[#0d1117] border-[#30363d]'
                 }`}>
-                  <label className={`block font-semibold ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>Upload PDF File from Device</label>
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      disabled={uploadingPdf}
-                      onClick={() => pdfInputRef.current?.click()}
-                      className="px-4 py-2 rounded-xl gradient-button text-xs font-bold flex items-center gap-2 shadow"
-                    >
-                      <UploadCloud className="w-4 h-4" /> {uploadingPdf ? 'Uploading PDF...' : 'Select PDF File'}
-                    </button>
-                    {formData.fileUrl && (
-                      <span className="text-[10px] font-mono text-[#2f9e44] font-bold truncate">✓ PDF Ready</span>
-                    )}
-                  </div>
+                  <label className={`block font-semibold ${isLight ? 'text-gray-700' : 'text-gray-300'}`}>
+                    Upload PDF File from Device
+                  </label>
+
+                  {uploadError && (
+                    <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 text-xs">
+                      {uploadError}
+                    </div>
+                  )}
+
+                  {uploadingPdf ? (
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-[#2f9e44]">
+                      <RefreshCw className="w-5 h-5 animate-spin" />
+                      <div className="space-y-0.5">
+                        <p className="font-bold text-xs">Uploading PDF to Cloudinary...</p>
+                        <p className="text-[10px] text-gray-400">Please wait before publishing</p>
+                      </div>
+                    </div>
+                  ) : currentFileUrl ? (
+                    <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${
+                      isLight ? 'bg-emerald-50 border-emerald-200' : 'bg-emerald-500/10 border-emerald-500/30'
+                    }`}>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <FileCheck className="w-6 h-6 text-[#2f9e44] flex-shrink-0" />
+                        <div className="min-w-0">
+                          <span className="font-bold text-xs text-[#2f9e44] block truncate">
+                            ✓ PDF Uploaded Successfully
+                          </span>
+                          <span className={`text-[11px] truncate block ${isLight ? 'text-slate-600' : 'text-gray-300'}`}>
+                            {uploadedPdf?.originalName || pdfFile?.name || formData.title || 'Document.pdf'}
+                            {pdfFile?.size ? ` (${formatFileSize(pdfFile.size)})` : ''}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => pdfInputRef.current?.click()}
+                        className={`px-3 py-1.5 rounded-lg border text-xs font-bold whitespace-nowrap transition-colors ${
+                          isLight ? 'bg-white border-gray-300 text-slate-700 hover:bg-gray-100' : 'bg-[#18202c] border-[#30363d] text-gray-300 hover:text-white'
+                        }`}
+                      >
+                        Change PDF
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => pdfInputRef.current?.click()}
+                        className="px-4 py-2.5 rounded-xl gradient-button text-xs font-bold flex items-center gap-2 shadow-md"
+                      >
+                        <UploadCloud className="w-4 h-4" /> Select PDF File
+                      </button>
+                      <span className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-gray-400'}`}>
+                        Supports PDF up to 20MB
+                      </span>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div>
@@ -386,8 +526,12 @@ export default function ResourcesAdmin() {
                 />
               </div>
 
-              <button type="submit" className="w-full py-3 rounded-xl gradient-button font-bold text-xs shadow-lg">
-                Save Learning Resource
+              <button
+                type="submit"
+                disabled={uploadingPdf}
+                className="w-full py-3 rounded-xl gradient-button font-bold text-xs shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {uploadingPdf ? 'Uploading PDF...' : 'Save Learning Resource'}
               </button>
             </form>
           </div>

@@ -11,6 +11,7 @@ function AdminLayoutInner() {
   const getPageTitle = () => {
     const path = location.pathname;
     if (path === '/admin') return 'Dashboard Overview';
+    if (path.includes('users')) return 'User Directory';
     if (path.includes('events')) return 'Events Management';
     if (path.includes('announcements')) return 'Latest Announcements';
     if (path.includes('feed-moderation')) return 'Community Moderation Queue';

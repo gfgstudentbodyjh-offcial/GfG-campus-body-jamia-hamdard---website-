@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
+import cacheService from '../services/cacheService';
 
 const AuthContext = createContext(null);
 
@@ -13,14 +14,25 @@ export const AuthProvider = ({ children }) => {
   // Global Auth Modal State
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalTab, setAuthModalTab] = useState('login'); // 'login' | 'signup'
+  const [authReason, setAuthReason] = useState('sign in to continue');
 
-  const openAuthModal = (tab = 'login') => {
+  const openAuthModal = (tab = 'login', reason = 'sign in to continue') => {
     setAuthModalTab(tab);
+    setAuthReason(reason);
     setIsAuthModalOpen(true);
   };
 
   const closeAuthModal = () => {
     setIsAuthModalOpen(false);
+  };
+
+  const requireAuthAction = (callback, actionName = 'interact with community') => {
+    if (!user) {
+      openAuthModal('login', actionName);
+      return false;
+    }
+    if (callback) callback();
+    return true;
   };
 
   useEffect(() => {
@@ -152,6 +164,10 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    if (member?._id) {
+      cacheService.clearUserCache(member._id);
+    }
+    cacheService.clearAdminCache();
     localStorage.removeItem('gfg_token');
     setToken('');
     setUser(null);
@@ -192,9 +208,11 @@ export const AuthProvider = ({ children }) => {
       isAdminAuthenticated: !!adminAccess && adminAccess.adminRole,
       isAuthModalOpen,
       authModalTab,
+      authReason,
       openAuthModal,
       closeAuthModal,
-      setAuthModalTab
+      setAuthModalTab,
+      requireAuthAction
     }}>
       {children}
     </AuthContext.Provider>

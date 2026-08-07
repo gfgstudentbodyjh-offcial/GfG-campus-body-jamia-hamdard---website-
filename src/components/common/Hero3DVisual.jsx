@@ -67,7 +67,7 @@ export default function Hero3DVisual() {
           className="absolute right-8 top-8 font-mono text-xs font-bold tracking-widest text-[#2f9e44]/50 bg-[#161b22] px-2 py-1 rounded border border-[#2f9e44]/30 animate-float-fast"
           style={{ transform: 'translateZ(-20px)' }}
         >
-          01 // BINARY
+          BINARY // LOGIC
         </div>
 
         {/* Layer 2: Floating Code Terminal Card */}

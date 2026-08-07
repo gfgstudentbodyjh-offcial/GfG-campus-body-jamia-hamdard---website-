@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 
 import api from '../../services/api';
+import cacheService from '../../services/cacheService';
 
 // Shared Single Source of Truth Data Modules
 import { MOCK_FACULTY } from '../../data/faculty';
@@ -51,27 +52,67 @@ export default function Home() {
   const currentMantri = sortedMantris[0];
   const teamsList = MOCK_TEAMS;
 
-  const [liveEvents, setLiveEvents] = useState([]);
-  const [announcements, setAnnouncements] = useState([]);
+  const [liveEvents, setLiveEvents] = useState(() => {
+    const cached = cacheService.get('events');
+    return cached?.data || [];
+  });
+  const [selectedEventModal, setSelectedEventModal] = useState(null);
+  const [announcements, setAnnouncements] = useState(() => {
+    const cached = cacheService.get('announcements');
+    return cached?.data || [];
+  });
 
   useEffect(() => {
-    const loadHomeData = async () => {
-      try {
-        const [evRes, annRes] = await Promise.all([
-          api.get('/events'),
-          api.get('/announcements')
-        ]);
-        if (evRes.data?.data) setLiveEvents(evRes.data.data);
-        if (annRes.data?.data) setAnnouncements(annRes.data.data);
-      } catch (err) {
-        console.warn('Home data fetch error:', err);
-      }
+    // Subscribe to cache updates (realtime sync when admin mutates events/announcements)
+    const unsubEvents = cacheService.subscribe('events', (data) => {
+      if (Array.isArray(data)) setLiveEvents(data);
+    });
+    const unsubAnn = cacheService.subscribe('announcements', (data) => {
+      if (Array.isArray(data)) setAnnouncements(data);
+    });
+
+    // Independent background revalidation (No Promise.all dependency)
+    cacheService.dedupe('events', () => api.get('/events'))
+      .then(res => {
+        const data = res.data?.data || [];
+        setLiveEvents(data);
+        cacheService.set('events', data);
+      })
+      .catch(err => console.warn('[Home] Background events sync error:', err));
+
+    cacheService.dedupe('announcements', () => api.get('/announcements'))
+      .then(res => {
+        const data = res.data?.data || [];
+        setAnnouncements(data);
+        cacheService.set('announcements', data);
+      })
+      .catch(err => console.warn('[Home] Background announcements sync error:', err));
+
+    return () => {
+      unsubEvents();
+      unsubAnn();
     };
-    loadHomeData();
   }, []);
 
-  const upcomingEvents = (liveEvents.length > 0 ? liveEvents : MOCK_EVENTS).filter((e) => e.status !== 'Completed');
-  const pastEvents = (liveEvents.length > 0 ? liveEvents : MOCK_EVENTS).filter((e) => e.status === 'Completed');
+  const allEvents = liveEvents.length > 0 ? liveEvents : MOCK_EVENTS;
+  const isPastEvent = (e) => {
+    if (!e) return false;
+    const st = (e.status || '').toLowerCase().trim();
+    if (st === 'completed' || st === 'archived') return true;
+    if (st === 'upcoming' || st === 'registration open' || st === 'announced' || st === 'planning' || st === 'live' || st === 'published') return false;
+    return e.isUpcoming === false;
+  };
+
+  const isUpcomingEvent = (e) => {
+    if (!e) return false;
+    const st = (e.status || '').toLowerCase().trim();
+    if (st === 'completed' || st === 'archived' || st === 'draft') return false;
+    if (st === 'upcoming' || st === 'registration open' || st === 'announced' || st === 'planning' || st === 'live' || st === 'published') return true;
+    return e.isUpcoming !== false;
+  };
+
+  const upcomingEvents = allEvents.filter(isUpcomingEvent);
+  const pastEvents = allEvents.filter(isPastEvent);
   const galleryList = MOCK_GALLERY;
 
   const now = new Date();
@@ -126,11 +167,15 @@ export default function Home() {
               </div>
               
               <h1 className="text-4xl sm:text-6xl font-black text-white tracking-tight leading-tight">
-                Empowering Innovators, Coders & Tech Leaders
+                Learn. Build. Grow Together.
               </h1>
 
               <p className="text-lg sm:text-xl text-gray-400 font-normal leading-relaxed max-w-2xl mx-auto lg:mx-0">
-                Master Data Structures, Full-Stack Web Dev, Artificial Intelligence & Competitive Programming with Jamia Hamdard’s official GFG Campus Body.
+                GeeksforGeeks Campus Body at Jamia Hamdard is a student-led tech community where students learn together, build projects, prepare for opportunities, and connect through workshops, events, hackathons, and peer learning.
+              </p>
+
+              <p className="text-xs sm:text-sm font-mono font-bold text-[#2f9e44] tracking-wider uppercase">
+                Learn • Build • Collaborate • Grow
               </p>
 
               <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 pt-2">
@@ -158,9 +203,10 @@ export default function Home() {
 
         {/* ─── 1.5. TOP PINNED ANNOUNCEMENT STRIP (HERO AREA) ────────────────────── */}
         {pinnedAnnouncement && (
-          <section className="bg-gradient-to-r from-[#0a0d12] via-[#142e16] to-[#0a0d12] border-y border-[#2f9e44]/40 py-3 px-4 sm:px-6 lg:px-8 shadow-xl relative z-20">
-            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-3 text-center sm:text-left">
+          <section className="bg-gradient-to-r from-[#0a0d12] via-[#142e16] to-[#0a0d12] border-y border-[#2f9e44]/40 py-2.5 sm:py-3 px-4 sm:px-6 lg:px-8 shadow-xl relative z-20">
+            {/* Desktop View (>= 640px) — UNCHANGED BASELINE */}
+            <div className="hidden sm:flex max-w-7xl mx-auto items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3 text-left">
                 <span className="flex items-center gap-1.5 bg-[#2f9e44] text-white text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded-full shadow-sm flex-shrink-0">
                   <Pin className="w-3 h-3 fill-white" /> Pinned Bulletin
                 </span>
@@ -192,6 +238,37 @@ export default function Home() {
                 </Link>
               )}
             </div>
+
+            {/* Mobile View (< 640px) — Compact Horizontal Announcement Strip */}
+            {(() => {
+              const targetUrl = pinnedAnnouncement.linkUrl || '/community';
+              const isExternal = pinnedAnnouncement.linkUrl && pinnedAnnouncement.linkUrl.startsWith('http');
+              const ContentWrapper = isExternal ? 'a' : Link;
+              const wrapperProps = isExternal 
+                ? { href: targetUrl, target: '_blank', rel: 'noopener noreferrer' } 
+                : { to: targetUrl };
+
+              return (
+                <ContentWrapper 
+                  {...wrapperProps}
+                  className="sm:hidden flex items-start gap-2.5 text-left py-0.5 group cursor-pointer"
+                >
+                  <div className="pt-0.5 flex-shrink-0 text-[#2f9e44]">
+                    <Pin className="w-4 h-4 fill-[#2f9e44]" />
+                  </div>
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <h4 className="font-bold text-white text-sm leading-snug group-hover:text-[#2f9e44] transition-colors">
+                      {pinnedAnnouncement.title}
+                    </h4>
+                    {pinnedAnnouncement.description && (
+                      <p className="text-xs text-gray-300 line-clamp-2 leading-relaxed font-normal">
+                        {pinnedAnnouncement.description}
+                      </p>
+                    )}
+                  </div>
+                </ContentWrapper>
+              );
+            })()}
           </section>
         )}
 
@@ -200,10 +277,10 @@ export default function Home() {
           <div className="max-w-7xl mx-auto space-y-8">
             <div className="text-center max-w-2xl mx-auto space-y-2">
               <span className="tech-eyebrow">
-                01 // ACADEMIC MENTORSHIP
+                FACULTY GUIDANCE
               </span>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-white">Faculty Coordinators</h2>
-              <p className="text-sm text-gray-400">Guiding light and academic leadership at Jamia Hamdard.</p>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-white">Faculty Guidance</h2>
+              <p className="text-sm text-gray-400">Meet the faculty mentors who guide and support our campus community.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
@@ -255,7 +332,7 @@ export default function Home() {
                     <h3 className="text-2xl font-extrabold text-white mt-4">{currentMantri.name}</h3>
                     <div className="flex items-center gap-2 mt-2">
                       <span className="text-xs font-mono font-bold text-[#2f9e44] uppercase tracking-wider bg-[#2f9e44]/15 border border-[#2f9e44]/30 px-3 py-1 rounded-md flex items-center gap-1">
-                        <ShieldCheck className="w-3.5 h-3.5" /> 02 // Campus Mantri • Session {currentMantri.tenure || currentMantri.session}
+                        <ShieldCheck className="w-3.5 h-3.5" /> Campus Mantri • Session {currentMantri.tenure || currentMantri.session}
                       </span>
                     </div>
                   </div>
@@ -311,9 +388,9 @@ export default function Home() {
           <section className="py-12 bg-[#121721]/40 border-y border-[#30363d] px-4 sm:px-6 lg:px-8 space-y-6">
             <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
               <div>
-                <span className="tech-eyebrow">03 // COMMUNITY MODULES</span>
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-1">Meet Our Teams</h2>
-                <p className="text-xs sm:text-sm text-gray-400 mt-0.5">Student leaders driving technical, creative, and operational excellence.</p>
+                <span className="tech-eyebrow">OUR TEAMS</span>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-1">Our Teams</h2>
+                <p className="text-xs sm:text-sm text-gray-400 mt-0.5">Student leaders driving technical, creative, and operational initiatives.</p>
               </div>
               <Link to="/teams" className="text-xs font-bold text-[#2f9e44] hover:underline flex items-center gap-1 flex-shrink-0">
                 Meet the Full Team <ChevronRight className="w-4 h-4" />
@@ -386,9 +463,9 @@ export default function Home() {
           <section className="py-10 sm:py-12 px-4 sm:px-6 lg:px-8 space-y-6">
             <div className="max-w-7xl mx-auto flex items-center justify-between">
               <div>
-                <span className="tech-eyebrow">04 // UPCOMING SESSIONS</span>
+                <span className="tech-eyebrow">UPCOMING EVENTS</span>
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-1">Upcoming Events</h2>
-                <p className="text-xs sm:text-sm text-gray-400 mt-0.5">Register for upcoming hackathons, bootcamps, and technical workshops.</p>
+                <p className="text-xs sm:text-sm text-gray-400 mt-0.5">Workshops, hackathons, and peer learning sessions coming up.</p>
               </div>
               <Link to="/events" className="text-xs font-bold text-[#2f9e44] hover:underline flex items-center gap-1 flex-shrink-0">
                 View All Events <ChevronRight className="w-4 h-4" />
@@ -397,43 +474,60 @@ export default function Home() {
 
             {/* Marquee Container: LEFT → RIGHT */}
             <InfiniteMarquee direction="right" duration={30} gapClass="gap-4 sm:gap-6">
-              {upcomingEvents.map((ev) => (
-                <TechCard
-                  key={ev._id}
-                  className="w-[84vw] sm:w-[350px] flex-shrink-0 snap-start border-[#30363d] hover:border-[#2f9e44] flex flex-col justify-between group bg-[#121721] shadow-xl"
-                >
-                  <div>
-                    <div className="h-36 sm:h-44 relative overflow-hidden">
-                      <img src={ev.banner} alt={ev.title} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                      
-                      {/* Live Registration Badge */}
-                      <span className="absolute top-3 left-3 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[9px] sm:text-[10px] font-mono font-bold bg-[#0a0d12]/90 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 shadow-lg">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                        <span>{ev.status || 'REGISTRATION OPEN'}</span>
-                      </span>
+              {upcomingEvents.map((ev) => {
+                const upTitle = ev.title || ev.name;
+                const upBanner = ev.banner || ev.image || ev.thumbnailUrl || ev.thumbnail?.url || ev.thumbnail;
+                const upDateStr = ev.date
+                  ? (typeof ev.date === 'string' ? ev.date : new Date(ev.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))
+                  : null;
+                const upDesc = ev.description || ev.shortDescription;
+                return (
+                  <TechCard
+                    key={ev._id || ev.legacyId}
+                    className="w-[84vw] sm:w-[350px] flex-shrink-0 snap-start border-[#30363d] hover:border-[#2f9e44] flex flex-col justify-between group bg-[#121721] shadow-xl"
+                  >
+                    <div>
+                      <div className="h-36 sm:h-44 relative overflow-hidden bg-[#0d1117]">
+                        <img
+                          src={upBanner}
+                          alt={upTitle}
+                          loading="lazy"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80'; }}
+                        />
+                        {/* Live Registration Badge */}
+                        <span className="absolute top-3 left-3 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[9px] sm:text-[10px] font-mono font-bold bg-[#0a0d12]/90 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 shadow-lg">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                          <span>{ev.status || 'REGISTRATION OPEN'}</span>
+                        </span>
+                      </div>
+
+                      <div className="p-4 sm:p-5 space-y-1.5 sm:space-y-2">
+                        <h3 className="text-sm sm:text-base font-extrabold text-white group-hover:text-[#2f9e44] transition-colors leading-snug">{upTitle}</h3>
+                        {upDateStr && <p className="text-xs text-[#2f9e44] font-semibold font-mono">{upDateStr}</p>}
+                        {upDesc && <p className="text-xs text-gray-300 line-clamp-2 leading-relaxed">{upDesc}</p>}
+                        {ev.partner && (
+                          <p className="text-[11px] text-gray-300 font-medium truncate">Partner: {ev.partner}</p>
+                        )}
+                        {ev.prizePool && (
+                          <p className="text-[11px] text-yellow-400 font-bold flex items-center gap-1">
+                            <Trophy className="w-3 h-3" /> Prize Pool: {ev.prizePool}
+                          </p>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="p-4 sm:p-5 space-y-1.5 sm:space-y-2">
-                      <h3 className="text-sm sm:text-base font-bold text-white group-hover:text-[#2f9e44] transition-colors truncate">{ev.title}</h3>
-                      <p className="text-xs text-[#2f9e44] font-semibold">{ev.date}</p>
-                      {ev.partner && (
-                        <p className="text-[11px] text-gray-300 font-medium truncate">Partner: {ev.partner}</p>
-                      )}
-                      {ev.prizePool && (
-                        <p className="text-[11px] text-yellow-400 font-bold flex items-center gap-1">
-                          <Trophy className="w-3 h-3" /> Prize Pool: {ev.prizePool}
-                        </p>
-                      )}
+                    <div className="p-4 sm:p-5 pt-0">
+                      <button
+                        onClick={() => setSelectedEventModal(ev)}
+                        className="w-full py-2 sm:py-2.5 rounded-xl bg-[#18202c] text-white hover:bg-[#2f9e44] transition-colors text-xs font-bold flex items-center justify-center gap-2 border border-[#30363d]"
+                      >
+                        Event Details <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                  </div>
-
-                  <div className="p-4 sm:p-5 pt-0">
-                    <Link to="/events" className="w-full py-2 sm:py-2.5 rounded-xl bg-[#18202c] text-white hover:bg-[#2f9e44] transition-colors text-xs font-bold flex items-center justify-center gap-2 border border-[#30363d]">
-                      Event Details <ChevronRight className="w-3.5 h-3.5" />
-                    </Link>
-                  </div>
-                </TechCard>
-              ))}
+                  </TechCard>
+                );
+              })}
             </InfiniteMarquee>
           </section>
         )}
@@ -443,9 +537,9 @@ export default function Home() {
           <section className="py-10 sm:py-12 bg-[#121721]/30 border-t border-[#30363d] px-4 sm:px-6 lg:px-8 space-y-6">
             <div className="max-w-7xl mx-auto flex items-center justify-between">
               <div>
-                <span className="tech-eyebrow">05 // DIGITAL ARCHIVE</span>
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-1">Past Events Archive</h2>
-                <p className="text-xs sm:text-sm text-gray-400 mt-0.5">Highlights from our successfully conducted technical sessions and workshops.</p>
+                <span className="tech-eyebrow">PAST EVENTS</span>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-1">Past Events</h2>
+                <p className="text-xs sm:text-sm text-gray-400 mt-0.5">Highlights from our past technical sessions and workshops.</p>
               </div>
               <Link to="/events" className="text-xs font-bold text-[#2f9e44] hover:underline flex items-center gap-1 flex-shrink-0">
                 Explore Past Events <ChevronRight className="w-4 h-4" />
@@ -455,19 +549,26 @@ export default function Home() {
             {/* Auto-Scroll Marquee Container: RIGHT → LEFT */}
             <InfiniteMarquee direction="left" duration={35} gapClass="gap-4 sm:gap-6">
               {pastEvents.map((ev) => {
-                const thumbUrl = ev.thumbnail?.url || ev.thumbnailUrl || ev.banner || ev.image || 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&q=80';
+                // SOURCE OF TRUTH: MongoDB / CMS fields — DO NOT substitute with generic text
+                const pastTitle = ev.title || ev.name;
+                const pastThumb = ev.thumbnail?.url || ev.thumbnail || ev.thumbnailUrl || ev.banner || ev.image;
+                const pastDateStr = ev.date
+                  ? (typeof ev.date === 'string' ? ev.date : new Date(ev.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))
+                  : null;
+                // Only render actual description from CMS — NEVER a generic replacement
+                const pastDesc = ev.description || ev.shortDescription || null;
 
                 return (
                   <TechCard
-                    key={ev._id}
+                    key={ev._id || ev.legacyId}
                     className="w-[84vw] sm:w-[350px] flex-shrink-0 snap-start p-0 bg-[#0a0d12] border-[#30363d] overflow-hidden rounded-2xl flex flex-col justify-between group shadow-xl hover:border-[#2f9e44]/60 transition-all duration-300"
                   >
                     <div>
-                      {/* 16:9 Thumbnail Image Container */}
+                      {/* Thumbnail Image */}
                       <div className="h-40 sm:h-48 relative overflow-hidden bg-[#18202c]">
                         <img
-                          src={thumbUrl}
-                          alt={ev.title}
+                          src={pastThumb}
+                          alt={pastTitle}
                           loading="lazy"
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           onError={(e) => {
@@ -488,30 +589,33 @@ export default function Home() {
                         )}
                       </div>
 
-                      {/* Details */}
+                      {/* CMS Content — exact MongoDB fields only */}
                       <div className="p-4 sm:p-5 space-y-2">
-                        <h3 className="text-sm sm:text-base font-bold text-white group-hover:text-[#2f9e44] transition-colors truncate">
-                          {ev.title}
+                        <h3 className="text-sm sm:text-base font-extrabold text-white group-hover:text-[#2f9e44] transition-colors leading-snug">
+                          {pastTitle}
                         </h3>
 
-                        <div className="flex items-center gap-2 text-xs font-mono text-[#2f9e44] font-semibold">
-                          <Calendar className="w-3.5 h-3.5" />
-                          <span>{ev.date}</span>
-                        </div>
+                        {pastDateStr && (
+                          <div className="flex items-center gap-2 text-xs font-mono text-[#2f9e44] font-semibold">
+                            <Calendar className="w-3.5 h-3.5" />
+                            <span>{pastDateStr}</span>
+                          </div>
+                        )}
 
-                        <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed">
-                          {ev.description || 'Successfully conducted technical session organized by GeeksforGeeks Campus Body.'}
-                        </p>
+                        {/* Render description ONLY if it exists in CMS — no generic fallback */}
+                        {pastDesc && (
+                          <p className="text-xs text-gray-300 line-clamp-2 leading-relaxed">{pastDesc}</p>
+                        )}
                       </div>
                     </div>
 
                     <div className="p-4 sm:p-5 pt-0">
-                      <Link
-                        to="/events"
+                      <button
+                        onClick={() => setSelectedEventModal(ev)}
                         className="w-full py-2 sm:py-2.5 rounded-xl bg-[#18202c] text-white hover:bg-[#2f9e44] transition-colors text-xs font-bold flex items-center justify-center gap-2 border border-[#30363d]"
                       >
                         View Event <ArrowRight className="w-3.5 h-3.5" />
-                      </Link>
+                      </button>
                     </div>
                   </TechCard>
                 );
@@ -525,9 +629,9 @@ export default function Home() {
           <section className="py-12 px-4 sm:px-6 lg:px-8 border-t border-[#30363d] space-y-6 relative overflow-hidden bg-gradient-to-b from-[#0a0d12] via-[#121721]/40 to-[#0a0d12]">
             <div className="max-w-7xl mx-auto flex items-center justify-between">
               <div>
-                <span className="tech-eyebrow">06 // COMMUNITY SHOWCASE</span>
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-1">Community Gallery</h2>
-                <p className="text-xs sm:text-sm text-gray-400 mt-0.5">Moments from workshops, hackathons, sessions and our campus community.</p>
+                <span className="tech-eyebrow">OUR COMMUNITY</span>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-white mt-1">Our Community</h2>
+                <p className="text-xs sm:text-sm text-gray-400 mt-0.5">The people, projects, events, and moments that shape GFG Campus Body at Jamia Hamdard.</p>
               </div>
               <Link to="/gallery" className="text-xs font-bold text-[#2f9e44] hover:underline flex items-center gap-1">
                 View Full Gallery ({galleryList.length} Unique Photos) <ChevronRight className="w-4 h-4" />
@@ -631,19 +735,19 @@ export default function Home() {
         <section className="py-16 px-4 sm:px-6 lg:px-8">
           <TechCard className="max-w-5xl mx-auto p-10 sm:p-14 border-[#2f9e44]/50 bg-gradient-to-br from-[#121721] via-[#0a0d12] to-[#142e16] text-center space-y-6 shadow-2xl">
             <span className="tech-eyebrow font-mono">
-              <Code2 className="w-3.5 h-3.5" /> READY_TO_BUILD<span className="animate-cursor text-[#2f9e44]">_</span>
+              <Code2 className="w-3.5 h-3.5" /> JOIN THE COMMUNITY
             </span>
             
             <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight">
-              Join the GFG Campus Body Community
+              Join the Community
             </h2>
             
             <p className="text-lg font-bold text-[#2f9e44] font-mono">
-              BUILD // LEARN // COLLABORATE // GROW
+              Learn • Build • Collaborate • Grow
             </p>
 
             <p className="text-sm sm:text-base text-gray-300 max-w-2xl mx-auto leading-relaxed">
-              Connect with fellow student developers, participate in hands-on workshops, hackathons, and competitive coding activities at Jamia Hamdard.
+              Connect with fellow student developers, participate in hands-on workshops, hackathons, and peer learning at Jamia Hamdard.
             </p>
 
             <div className="pt-4 flex justify-center">
@@ -655,6 +759,121 @@ export default function Home() {
         </section>
 
       </main>
+
+      {/* ─── EVENT DETAILS MODAL ────────────────────────────────────────── */}
+      {selectedEventModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
+          onClick={() => setSelectedEventModal(null)}
+        >
+          <div
+            className="relative w-full max-w-2xl bg-[#121721] border border-[#30363d] rounded-2xl overflow-hidden shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close Button */}
+            <button
+              onClick={() => setSelectedEventModal(null)}
+              className="absolute top-3 right-3 z-10 p-2 rounded-full bg-black/60 text-gray-300 hover:text-white hover:bg-black transition-colors"
+            >
+              ✕
+            </button>
+
+            {/* Banner Image */}
+            <div className="h-56 sm:h-64 relative overflow-hidden bg-[#0d1117]">
+              <img
+                src={selectedEventModal.banner || selectedEventModal.image || selectedEventModal.thumbnailUrl || selectedEventModal.thumbnail?.url || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80'}
+                alt={selectedEventModal.title}
+                className="w-full h-full object-cover"
+              />
+              <span className="absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-mono font-bold bg-[#0a0d12]/90 text-emerald-400 border border-emerald-500/40">
+                {selectedEventModal.category || selectedEventModal.status || 'Event Details'}
+              </span>
+            </div>
+
+            {/* Details Content */}
+            <div className="p-6 space-y-4 pt-0">
+              <div className="space-y-2">
+                <span className="tech-eyebrow">EVENT DETAILS</span>
+                <h2 className="text-xl sm:text-2xl font-black text-white leading-tight">
+                  {selectedEventModal.title || selectedEventModal.name}
+                </h2>
+              </div>
+
+              {/* Meta Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-xl bg-[#0d1117] border border-[#30363d] text-xs font-mono">
+                {selectedEventModal.date && (
+                  <div className="flex items-center gap-2 text-[#2f9e44] font-bold">
+                    <Calendar className="w-4 h-4 flex-shrink-0" />
+                    <span>{typeof selectedEventModal.date === 'string' ? selectedEventModal.date : new Date(selectedEventModal.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                  </div>
+                )}
+                {selectedEventModal.venue && (
+                  <div className="flex items-center gap-2 text-gray-300">
+                    <span className="text-gray-400 font-bold">Venue:</span>
+                    <span>{selectedEventModal.venue}</span>
+                  </div>
+                )}
+                {selectedEventModal.speaker && (
+                  <div className="flex items-center gap-2 text-gray-300">
+                    <UserCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <span>Speaker: {selectedEventModal.speaker}</span>
+                  </div>
+                )}
+                {selectedEventModal.partner && (
+                  <div className="flex items-center gap-2 text-gray-300">
+                    <Handshake className="w-4 h-4 text-[#06b6d4] flex-shrink-0" />
+                    <span>Partner: {selectedEventModal.partner}</span>
+                  </div>
+                )}
+                {selectedEventModal.prizePool && (
+                  <div className="flex items-center gap-2 text-yellow-400 font-bold">
+                    <Trophy className="w-4 h-4 flex-shrink-0" />
+                    <span>Prize Pool: {selectedEventModal.prizePool}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Full Description */}
+              <div className="space-y-1">
+                <h4 className="text-xs font-mono font-bold text-gray-400 uppercase">About Event</h4>
+                <p className="text-xs sm:text-sm text-gray-300 leading-relaxed whitespace-pre-line">
+                  {selectedEventModal.description || selectedEventModal.shortDescription || 'No detailed description available.'}
+                </p>
+              </div>
+
+              {/* Action Button */}
+              <div className="pt-2 flex gap-3">
+                {selectedEventModal.registrationLink ? (
+                  <a
+                    href={selectedEventModal.registrationLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 py-3 rounded-xl gradient-button text-xs font-bold flex items-center justify-center gap-2 shadow-lg"
+                  >
+                    <span>Register / Apply Now</span>
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                ) : (selectedEventModal.formId || selectedEventModal.registrationFormRef) ? (
+                  <Link
+                    to={`/forms/${selectedEventModal.formId || selectedEventModal.registrationFormRef}`}
+                    className="flex-1 py-3 rounded-xl gradient-button text-xs font-bold flex items-center justify-center gap-2 shadow-lg"
+                  >
+                    <span>Open Registration Form</span>
+                    <ExternalLink className="w-4 h-4" />
+                  </Link>
+                ) : null}
+
+                <Link
+                  to="/events"
+                  className="flex-1 py-3 rounded-xl bg-[#18202c] text-white hover:bg-[#2f9e44] transition-colors text-xs font-bold flex items-center justify-center gap-2 border border-[#30363d]"
+                >
+                  View All Events <ChevronRight className="w-4 h-4" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Lightbox Modal */}
       <GalleryLightbox

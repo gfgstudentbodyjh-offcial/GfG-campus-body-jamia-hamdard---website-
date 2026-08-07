@@ -9,10 +9,15 @@ import {
 } from 'lucide-react';
 import TechCard from '../../components/common/TechCard';
 import RoleBadge from '../../components/common/RoleBadge';
+import CommentSection from '../../components/community/CommentSection';
+import { useAuth } from '../../context/AuthContext';
+import { patchCachedPost } from '../../utils/communityCache';
 
 export default function PostDetailPage() {
   const { postId } = useParams();
   const navigate = useNavigate();
+  const { user, member: authMember, requireAuthAction } = useAuth();
+  const currentMemberId = authMember?._id || user?.id || user?._id;
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [comments, setComments] = useState([]);
@@ -20,6 +25,9 @@ export default function PostDetailPage() {
   const [activeReplyToId, setActiveReplyToId] = useState(null);
   const [replyText, setReplyText] = useState('');
   const [toastMessage, setToastMessage] = useState('');
+
+  const isLikingRef = React.useRef(false);
+  const isBookmarkingRef = React.useRef(false);
 
   useEffect(() => {
     loadPostAndComments();
@@ -47,30 +55,68 @@ export default function PostDetailPage() {
 
   const handleLike = async () => {
     if (!post) return;
+    if (!requireAuthAction(null, 'like posts')) return;
+    if (isLikingRef.current) return;
+    isLikingRef.current = true;
+
+    const previousLiked = post.isLiked;
+    const previousCount = post.likesCount || 0;
+    const nextLiked = !previousLiked;
+    const nextCount = nextLiked ? previousCount + 1 : Math.max(0, previousCount - 1);
+
+    // INSTANT OPTIMISTIC UPDATE
+    setPost(prev => ({ ...prev, isLiked: nextLiked, likesCount: nextCount }));
+    patchCachedPost(post._id, { isLiked: nextLiked, likesCount: nextCount });
+
     try {
       const res = await api.post(`/posts/${post._id}/like`);
-      setPost(prev => ({
-        ...prev,
-        likesCount: res.data.likesCount,
-        isLiked: res.data.isLiked
-      }));
+      if (res.data?.success || res.data?.isLiked !== undefined) {
+        const serverCount = res.data.likesCount !== undefined ? res.data.likesCount : nextCount;
+        const serverLiked = res.data.isLiked !== undefined ? res.data.isLiked : nextLiked;
+        setPost(prev => ({ ...prev, likesCount: serverCount, isLiked: serverLiked }));
+        patchCachedPost(post._id, { likesCount: serverCount, isLiked: serverLiked });
+      }
     } catch (err) {
-      console.warn(err);
+      console.warn('Like toggle failed:', err);
+      setPost(prev => ({ ...prev, isLiked: previousLiked, likesCount: previousCount }));
+      patchCachedPost(post._id, { isLiked: previousLiked, likesCount: previousCount });
+      showToast("Couldn't update like.");
+    } finally {
+      isLikingRef.current = false;
     }
   };
 
   const handleBookmark = async () => {
     if (!post) return;
+    if (!requireAuthAction(null, 'save posts')) return;
+    if (isBookmarkingRef.current) return;
+    isBookmarkingRef.current = true;
+
+    const previousBookmarked = post.isBookmarked;
+    const previousCount = post.bookmarksCount || 0;
+    const nextBookmarked = !previousBookmarked;
+    const nextCount = nextBookmarked ? previousCount + 1 : Math.max(0, previousCount - 1);
+
+    // INSTANT OPTIMISTIC UPDATE
+    setPost(prev => ({ ...prev, isBookmarked: nextBookmarked, bookmarksCount: nextCount }));
+    patchCachedPost(post._id, { isBookmarked: nextBookmarked, bookmarksCount: nextCount });
+
     try {
       const res = await api.post(`/posts/${post._id}/bookmark`);
-      setPost(prev => ({
-        ...prev,
-        bookmarksCount: res.data.bookmarksCount,
-        isBookmarked: res.data.isBookmarked
-      }));
-      showToast(res.data.isBookmarked ? 'Post saved to bookmarks' : 'Post removed from bookmarks');
+      if (res.data?.success || res.data?.isBookmarked !== undefined) {
+        const serverCount = res.data.bookmarksCount !== undefined ? res.data.bookmarksCount : nextCount;
+        const serverBookmarked = res.data.isBookmarked !== undefined ? res.data.isBookmarked : nextBookmarked;
+        setPost(prev => ({ ...prev, bookmarksCount: serverCount, isBookmarked: serverBookmarked }));
+        patchCachedPost(post._id, { bookmarksCount: serverCount, isBookmarked: serverBookmarked });
+        showToast(serverBookmarked ? 'Post saved to bookmarks' : 'Post removed from bookmarks');
+      }
     } catch (err) {
-      console.warn(err);
+      console.warn('Bookmark toggle failed:', err);
+      setPost(prev => ({ ...prev, isBookmarked: previousBookmarked, bookmarksCount: previousCount }));
+      patchCachedPost(post._id, { isBookmarked: previousBookmarked, bookmarksCount: previousCount });
+      showToast("Couldn't save post.");
+    } finally {
+      isBookmarkingRef.current = false;
     }
   };
 
@@ -329,106 +375,18 @@ export default function PostDetailPage() {
         </TechCard>
 
         {/* Discussion Section */}
-        <section className="space-y-6">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <MessageSquare className="w-5 h-5 text-[#2f9e44]" /> Community Discussion ({comments.length})
-          </h2>
-
-          {/* Top-Level Comment Form */}
-          <form onSubmit={(e) => handleAddComment(e, null)} className="flex gap-3 bg-[#121721] p-4 rounded-2xl border border-[#30363d]">
-            <input
-              type="text"
-              placeholder="Write a constructive comment or question..."
-              value={commentText}
-              onChange={e => setCommentText(e.target.value)}
-              className="flex-1 bg-[#0a0d12] border border-[#30363d] rounded-xl px-4 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#2f9e44]"
-            />
-            <button type="submit" className="px-5 py-2.5 rounded-xl gradient-button text-xs font-bold flex items-center gap-1.5 flex-shrink-0">
-              <Send className="w-3.5 h-3.5" /> Comment
-            </button>
-          </form>
-
-          {/* 2-Level Threaded Comment Stream */}
-          <div className="space-y-4">
-            {comments.map((c) => (
-              <div key={c._id} className="bg-[#121721] p-5 rounded-2xl border border-[#30363d] space-y-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={c.authorRef?.photo || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80'}
-                      alt={c.authorRef?.name || 'Member'}
-                      className="w-8 h-8 rounded-full object-cover border border-[#2f9e44]"
-                    />
-                    <div>
-                      <h4 className="font-bold text-white text-xs">{c.authorRef?.name || 'Community Member'}</h4>
-                      <p className="text-[10px] text-gray-400">{c.authorRef?.role || 'Member'} • {new Date(c.createdAt).toLocaleTimeString()}</p>
-                    </div>
-                  </div>
-
-                  <button onClick={() => handleDeleteComment(c._id)} className="text-gray-500 hover:text-red-400 p-1">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <p className="text-xs text-gray-200 leading-relaxed pl-1">{c.content}</p>
-
-                {/* Reply Toggle */}
-                <div className="pt-1 flex items-center gap-4 text-[11px] text-gray-400 font-semibold">
-                  <button
-                    onClick={() => setActiveReplyToId(activeReplyToId === c._id ? null : c._id)}
-                    className="hover:text-[#2f9e44] transition-colors"
-                  >
-                    Reply
-                  </button>
-                </div>
-
-                {/* Inline Reply Form */}
-                {activeReplyToId === c._id && (
-                  <form onSubmit={(e) => handleAddComment(e, c._id)} className="flex gap-2 pt-2">
-                    <input
-                      type="text"
-                      placeholder={`Reply to ${c.authorRef?.name || 'member'}...`}
-                      value={replyText}
-                      onChange={e => setReplyText(e.target.value)}
-                      className="flex-1 bg-[#0a0d12] border border-[#30363d] rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#2f9e44]"
-                    />
-                    <button type="submit" className="px-3 py-1.5 rounded-xl gradient-button text-xs font-bold">
-                      Reply
-                    </button>
-                  </form>
-                )}
-
-                {/* Level-2 Nested Replies */}
-                {c.replies && c.replies.length > 0 && (
-                  <div className="pl-6 pt-3 space-y-3 border-l-2 border-[#2f9e44]/30">
-                    {c.replies.map((reply) => (
-                      <div key={reply._id} className="bg-[#0a0d12] p-3 rounded-xl border border-[#30363d]/60 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <img
-                              src={reply.authorRef?.photo || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80'}
-                              alt={reply.authorRef?.name || 'Member'}
-                              className="w-6 h-6 rounded-full object-cover border border-[#2f9e44]"
-                            />
-                            <span className="font-bold text-white text-[11px]">{reply.authorRef?.name || 'Member'}</span>
-                            <span className="text-[9px] text-gray-500">{new Date(reply.createdAt).toLocaleTimeString()}</span>
-                          </div>
-
-                          <button onClick={() => handleDeleteComment(reply._id)} className="text-gray-500 hover:text-red-400 p-1">
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                        <p className="text-xs text-gray-300 pl-8">{reply.content}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-              </div>
-            ))}
-          </div>
-
-        </section>
+        <TechCard className="p-5 sm:p-6 bg-[#121721] border-[#30363d]">
+          <CommentSection
+            postId={postId}
+            comments={comments}
+            currentMemberId={currentMemberId}
+            postAuthorId={post.authorRef?._id || post.authorRef}
+            onAddComment={handleAddComment}
+            onDeleteComment={handleDeleteComment}
+            onReportComment={(cid) => setReportingTarget({ targetType: 'comment', targetId: cid })}
+            showFullPageLink={false}
+          />
+        </TechCard>
 
       </main>
 

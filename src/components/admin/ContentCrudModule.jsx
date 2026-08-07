@@ -108,12 +108,12 @@ export default function ContentCrudModule({
               }`}>
                 <tr>
                   {columns.map((col, idx) => (
-                    <th key={idx} className={`px-6 py-4 font-bold ${col.toLowerCase() === 'actions' ? 'text-right' : ''}`}>
+                    <th key={idx} className={`px-6 py-4 font-bold ${col.toLowerCase() === 'actions' ? 'text-center' : ''}`}>
                       {col}
                     </th>
                   ))}
                   {!hasActionsCol && (
-                    <th className="px-6 py-4 font-bold text-right">Actions</th>
+                    <th className="px-6 py-4 font-bold text-center">Actions</th>
                   )}
                 </tr>
               </thead>

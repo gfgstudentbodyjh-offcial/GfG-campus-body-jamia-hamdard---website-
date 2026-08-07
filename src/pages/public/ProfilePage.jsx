@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Footer from '../../components/common/Footer';
 import api from '../../services/api';
@@ -8,25 +8,34 @@ import MembershipCard from '../../components/common/MembershipCard';
 import TechCard from '../../components/common/TechCard';
 import TechHeader from '../../components/common/TechHeader';
 import ChangePasswordModal from '../../components/common/ChangePasswordModal';
+import PostCard from '../../components/community/PostCard';
+import ReportModal from '../../components/common/ReportModal';
 import { useAuth } from '../../context/AuthContext';
-import { resolveAvatarUrl, isValidMediaUrl, getValidMediaUrl } from '../../utils/mediaResolver';
+import { resolveAvatarUrl, isValidMediaUrl, getValidMediaUrl, formatDisplayHandle } from '../../utils/mediaResolver';
+import cacheService from '../../services/cacheService';
+import { getCachedProfile, setCachedProfile, patchCachedPost } from '../../utils/communityCache';
+
 import {
   User, Edit3, Github, Linkedin, Globe, Instagram, Plus, X,
   Bookmark, MessageSquare, ShieldCheck, Heart, Trash2, CheckCircle2,
   Calendar, Award, Sparkles, ExternalLink, Camera, Upload, AlertCircle,
-  KeyRound, Shield, Settings as SettingsIcon
+  KeyRound, Shield, Settings as SettingsIcon, Crop, Loader2
 } from 'lucide-react';
+import ImageCropModal from '../../components/common/ImageCropModal';
 
 export default function ProfilePage() {
-  const { memberId: paramMemberId } = useParams();
+  const navigate = useNavigate();
+  const { username: paramUsername, memberId: paramMemberId } = useParams();
+  const targetParam = paramUsername || paramMemberId;
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get('tab') || 'overview';
 
-  const { user, member: authMember, isAuthenticated, openAuthModal } = useAuth();
+  const { user, member: authMember, isAuthenticated, openAuthModal, requireAuthAction } = useAuth();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [settingsSubTab, setSettingsSubTab] = useState('security'); // 'profile' | 'security'
+  const [reportingTarget, setReportingTarget] = useState(null);
 
   // Change Password Modal State
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
@@ -65,145 +74,294 @@ export default function ProfilePage() {
   const [savedPosts, setSavedPosts] = useState([]);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
-  const currentMemberId = authMember?._id || user?.id || 'm_saquib';
-  const targetId = paramMemberId || currentMemberId;
-  const isOwner = !paramMemberId || paramMemberId === currentMemberId;
+  const currentUserId = authMember?._id || user?.id || user?._id;
+  const currentMemberId = currentUserId;
+  const currentUsername = (authMember?.username || user?.username || '').toLowerCase().trim();
 
-  const handlePhotoImageSelect = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadError('');
-    setIsUploadingPhoto(true);
+  const profileUserId = profile?._id || profile?.id;
+  const profileUsername = (profile?.username || '').toLowerCase().trim();
+
+  // Loading safety: isOwnProfile defaults to FALSE until both identities are resolved
+  const isOwnProfile = Boolean(
+    !loading && profile && currentUserId && (
+      String(currentUserId) === String(profileUserId) ||
+      (currentUsername && profileUsername && currentUsername === profileUsername) ||
+      (!targetParam && authMember)
+    )
+  );
+  const isOwner = isOwnProfile;
+
+  // Protect tab navigation & editing modal state
+  useEffect(() => {
+    if (!isOwnProfile) {
+      if (activeTab === 'saved' || activeTab === 'settings') {
+        setActiveTab('overview');
+      }
+      if (isEditing) {
+        setIsEditing(false);
+      }
+    }
+  }, [isOwnProfile, activeTab, isEditing]);
+
+  const pendingLikesRef = useRef(new Set());
+  const pendingBookmarksRef = useRef(new Set());
+
+  const handleLike = async (postId) => {
+    if (!requireAuthAction(null, 'like posts')) return;
+    if (pendingLikesRef.current.has(postId)) return;
+    pendingLikesRef.current.add(postId);
+
+    let prevUserPosts = [...userPosts];
+    let prevSavedPosts = [...savedPosts];
+
+    const applyOptimistic = (list) => list.map(p => {
+      if (p._id === postId) {
+        const nextLiked = !p.isLiked;
+        const nextCount = nextLiked ? (p.likesCount || 0) + 1 : Math.max(0, (p.likesCount || 1) - 1);
+        patchCachedPost(postId, { isLiked: nextLiked, likesCount: nextCount });
+        return { ...p, isLiked: nextLiked, likesCount: nextCount };
+      }
+      return p;
+    });
+
+    setUserPosts(prev => applyOptimistic(prev));
+    setSavedPosts(prev => applyOptimistic(prev));
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('folder', 'Members');
-      const res = await api.post('/media/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-
-      // Cloudinary source of truth: only update state when a real HTTPS URL is returned
-      const cloudUrl = res.data?.media?.url || res.data?.data?.url || res.data?.url;
-      if (cloudUrl && cloudUrl.startsWith('http')) {
-        const publicId = res.data?.media?.publicId || res.data?.data?.publicId || '';
-        setEditForm(prev => ({ ...prev, photo: cloudUrl, photoPublicId: publicId }));
-        setAvatarError(false);
-      } else {
-        throw new Error('Upload succeeded but returned an invalid URL.');
+      const res = await api.post(`/posts/${postId}/like`, { memberId: currentMemberId });
+      if (res.data?.success || res.data?.isLiked !== undefined) {
+        const serverLiked = res.data.isLiked !== undefined ? res.data.isLiked : res.data.liked;
+        const serverLikesCount = res.data.likesCount;
+        const applyServer = (list) => list.map(p => p._id === postId ? { ...p, isLiked: serverLiked, likesCount: serverLikesCount } : p);
+        setUserPosts(prev => applyServer(prev));
+        setSavedPosts(prev => applyServer(prev));
+        patchCachedPost(postId, { isLiked: serverLiked, likesCount: serverLikesCount });
       }
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || 'Avatar upload failed.';
-      setUploadError(`Avatar upload failed: ${msg}`);
-      console.error('[ProfilePage] Avatar upload error:', err);
-      // Preserve existing photo — do not mutate state with blob URL
+      console.warn('Like toggle failed:', err);
+      setUserPosts(prevUserPosts);
+      setSavedPosts(prevSavedPosts);
     } finally {
-      setIsUploadingPhoto(false);
-      if (photoInputRef.current) photoInputRef.current.value = '';
+      pendingLikesRef.current.delete(postId);
     }
   };
 
-  const handleCoverImageSelect = async (e) => {
+  const handleBookmark = async (postId) => {
+    if (!requireAuthAction(null, 'save posts')) return;
+    if (pendingBookmarksRef.current.has(postId)) return;
+    pendingBookmarksRef.current.add(postId);
+
+    let prevUserPosts = [...userPosts];
+    let prevSavedPosts = [...savedPosts];
+
+    const applyOptimistic = (list) => list.map(p => {
+      if (p._id === postId) {
+        const nextBookmarked = !p.isBookmarked;
+        const nextCount = nextBookmarked ? (p.bookmarksCount || 0) + 1 : Math.max(0, (p.bookmarksCount || 1) - 1);
+        patchCachedPost(postId, { isBookmarked: nextBookmarked, bookmarksCount: nextCount });
+        return { ...p, isBookmarked: nextBookmarked, bookmarksCount: nextCount };
+      }
+      return p;
+    });
+
+    setUserPosts(prev => applyOptimistic(prev));
+    setSavedPosts(prev => {
+      const target = prev.find(p => p._id === postId);
+      if (target && target.isBookmarked) {
+        // If unbookmarking on Saved tab, remove it
+        return prev.filter(p => p._id !== postId);
+      }
+      return applyOptimistic(prev);
+    });
+
+    try {
+      const res = await api.post(`/posts/${postId}/bookmark`, { memberId: currentMemberId });
+      if (res.data?.success || res.data?.isBookmarked !== undefined) {
+        const serverBookmarked = res.data.isBookmarked !== undefined ? res.data.isBookmarked : res.data.bookmarked;
+        const serverCount = res.data.bookmarksCount;
+        const applyServer = (list) => list.map(p => p._id === postId ? { ...p, isBookmarked: serverBookmarked, bookmarksCount: serverCount } : p);
+        setUserPosts(prev => applyServer(prev));
+        setSavedPosts(prev => {
+          if (!serverBookmarked) return prev.filter(p => p._id !== postId);
+          return applyServer(prev);
+        });
+        patchCachedPost(postId, { isBookmarked: serverBookmarked, bookmarksCount: serverCount });
+      }
+    } catch (err) {
+      console.warn('Bookmark toggle failed:', err);
+      setUserPosts(prevUserPosts);
+      setSavedPosts(prevSavedPosts);
+    } finally {
+      pendingBookmarksRef.current.delete(postId);
+    }
+  };
+
+  // Crop Modal States
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropSource, setCropSource] = useState(null);
+  const [cropPresetKey, setCropPresetKey] = useState('avatar');
+
+  const handlePhotoImageSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadError('');
-    setIsUploadingCover(true);
+    setCropSource(file);
+    setCropPresetKey('avatar');
+    setCropModalOpen(true);
+  };
 
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('folder', 'Members');
-      const res = await api.post('/media/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+  const handleCoverImageSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError('');
+    setCropSource(file);
+    setCropPresetKey('profileCover');
+    setCropModalOpen(true);
+  };
 
-      // Cloudinary source of truth: only update state when a real HTTPS URL is returned
-      const cloudUrl = res.data?.media?.url || res.data?.data?.url || res.data?.url;
-      if (cloudUrl && cloudUrl.startsWith('http')) {
-        const publicId = res.data?.media?.publicId || res.data?.data?.publicId || '';
-        setEditForm(prev => ({ ...prev, coverPhoto: cloudUrl, coverPhotoPublicId: publicId }));
-        setCoverError(false);
-      } else {
-        throw new Error('Upload succeeded but returned an invalid URL.');
+  const handleOpenAdjustCrop = (type) => {
+    const currentUrl = type === 'avatar' ? editForm.photo || profile?.photo : editForm.coverPhoto || profile?.coverPhoto;
+    if (!currentUrl) return;
+    setCropSource(currentUrl);
+    setCropPresetKey(type === 'avatar' ? 'avatar' : 'profileCover');
+    setCropModalOpen(true);
+  };
+
+  const handleApplyCroppedProfileImage = async ({ croppedFile }) => {
+    if (!croppedFile) return;
+
+    if (cropPresetKey === 'avatar') {
+      setIsUploadingPhoto(true);
+      try {
+        const formData = new FormData();
+        formData.append('file', croppedFile);
+        formData.append('folder', 'Members');
+        const res = await api.post('/media/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        const cloudUrl = res.data?.media?.url || res.data?.data?.url || res.data?.url;
+        if (cloudUrl && cloudUrl.startsWith('http')) {
+          const publicId = res.data?.media?.publicId || res.data?.data?.publicId || '';
+          setEditForm(prev => ({ ...prev, photo: cloudUrl, photoPublicId: publicId }));
+          setAvatarError(false);
+        } else {
+          throw new Error('Upload succeeded but returned an invalid URL.');
+        }
+      } catch (err) {
+        const msg = err.response?.data?.message || err.message || 'Avatar upload failed.';
+        setUploadError(`Avatar upload failed: ${msg}`);
+      } finally {
+        setIsUploadingPhoto(false);
+        if (photoInputRef.current) photoInputRef.current.value = '';
       }
-    } catch (err) {
-      const msg = err.response?.data?.message || err.message || 'Cover upload failed.';
-      setUploadError(`Cover upload failed: ${msg}`);
-      console.error('[ProfilePage] Cover upload error:', err);
-      // Preserve existing cover — do not mutate state
-    } finally {
-      setIsUploadingCover(false);
-      if (coverInputRef.current) coverInputRef.current.value = '';
+    } else {
+      setIsUploadingCover(true);
+      try {
+        const formData = new FormData();
+        formData.append('file', croppedFile);
+        formData.append('folder', 'Members');
+        const res = await api.post('/media/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        const cloudUrl = res.data?.media?.url || res.data?.data?.url || res.data?.url;
+        if (cloudUrl && cloudUrl.startsWith('http')) {
+          const publicId = res.data?.media?.publicId || res.data?.data?.publicId || '';
+          setEditForm(prev => ({ ...prev, coverPhoto: cloudUrl, coverPhotoPublicId: publicId }));
+          setCoverError(false);
+        } else {
+          throw new Error('Upload succeeded but returned an invalid URL.');
+        }
+      } catch (err) {
+        const msg = err.response?.data?.message || err.message || 'Cover upload failed.';
+        setUploadError(`Cover upload failed: ${msg}`);
+      } finally {
+        setIsUploadingCover(false);
+        if (coverInputRef.current) coverInputRef.current.value = '';
+      }
     }
   };
 
   useEffect(() => {
     loadProfileData();
-  }, [targetId, authMember]);
+  }, [targetParam, authMember?._id]);
 
   const loadProfileData = async () => {
-    setLoading(true);
-    if (isOwner && authMember) {
-      setProfile(authMember);
-      setEditForm({
-        bio: authMember.bio || '',
-        about: authMember.about || '',
-        photo: authMember.photo || '',
-        coverPhoto: authMember.coverPhoto || '',
-        github: authMember.github || '',
-        linkedin: authMember.linkedin || '',
-        portfolio: authMember.portfolio || '',
-        instagram: authMember.instagram || '',
-        website: authMember.website || '',
-        skills: authMember.skills || ['React', 'JavaScript'],
-        expertise: authMember.expertise || ['Web Development']
-      });
+    const cleanTarget = (targetParam && targetParam !== 'undefined' && targetParam !== 'null') ? targetParam : null;
+    const cachedProfile = cleanTarget ? cacheService.get(`profile:${cleanTarget}`)?.data : null;
+    if (cachedProfile) {
+      setProfile(cachedProfile);
       setLoading(false);
-      return;
+    } else {
+      setLoading(true);
     }
 
-    try {
-      const res = await api.get(`/members/${targetId}/profile`);
-      const data = res.data.data;
-      setProfile(data);
+    let loadedProfile = null;
+
+    if (!cleanTarget && authMember) {
+      loadedProfile = authMember;
+    } else {
+      try {
+        const fetchKey = cleanTarget || currentMemberId || 'me';
+        const res = await cacheService.dedupe(`profile:${fetchKey}`, () => api.get(`/members/profile/${fetchKey}`));
+        loadedProfile = res.data.member || res.data.data;
+      } catch (err) {
+        try {
+          const res2 = await cacheService.dedupe(`profile-alt:${targetParam}`, () => api.get(`/members/${targetParam}/profile`));
+          loadedProfile = res2.data.data;
+        } catch (err2) {
+          loadedProfile = authMember || {
+            _id: currentMemberId,
+            name: user?.username || 'Community Member',
+            role: 'Visitor',
+            teamName: 'General',
+            college: 'Jamia Hamdard',
+            department: 'Computer Science & Engineering',
+            photo: `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.username || 'Member')}&background=2f9e44&color=fff&bold=true`
+          };
+        }
+      }
+    }
+
+    setProfile(loadedProfile);
+    if (loadedProfile) {
+      const pKey = cleanTarget || loadedProfile._id;
+      if (pKey) cacheService.set(`profile:${pKey}`, loadedProfile);
       setEditForm({
-        bio: data.bio || '',
-        about: data.about || '',
-        photo: data.photo || '',
-        coverPhoto: data.coverPhoto || '',
-        github: data.github || '',
-        linkedin: data.linkedin || '',
-        portfolio: data.portfolio || '',
-        instagram: data.instagram || '',
-        website: data.website || '',
-        skills: data.skills || ['React', 'Node.js'],
-        expertise: data.expertise || ['Frontend Development']
+        bio: loadedProfile.bio || '',
+        about: loadedProfile.about || '',
+        photo: loadedProfile.photo || '',
+        coverPhoto: loadedProfile.coverPhoto || '',
+        github: loadedProfile.github || '',
+        linkedin: loadedProfile.linkedin || '',
+        portfolio: loadedProfile.portfolio || '',
+        instagram: loadedProfile.instagram || '',
+        website: loadedProfile.website || '',
+        skills: loadedProfile.skills || ['React', 'JavaScript'],
+        expertise: loadedProfile.expertise || ['Web Development']
       });
-    } catch (err) {
-      const fallback = authMember || {
-        _id: currentMemberId,
-        name: user?.username || 'Community Member',
-        email: user?.email || 'member@gfgcampus.org',
-        role: 'Visitor',
-        teamName: 'General',
-        accountType: 'Visitor',
-        membershipStatus: 'pending',
-        photo: `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.username || 'Member')}&background=2f9e44&color=fff&bold=true`
-      };
-      setProfile(fallback);
     }
 
-    // Load Posts
+    // Load Posts using deduplicated request
+    let fetchSlugOrId = loadedProfile?._id || loadedProfile?.username || targetParam || currentMemberId || 'me';
+    if (typeof fetchSlugOrId !== 'string' || fetchSlugOrId === 'undefined' || fetchSlugOrId === 'null') {
+      fetchSlugOrId = currentMemberId || 'me';
+    }
+
     try {
-      const postsRes = await api.get('/posts', { params: { filter: 'My Posts', memberId: targetId } });
-      setUserPosts(postsRes.data.data || []);
+      const postsRes = await cacheService.dedupe(`profile-posts:${fetchSlugOrId}`, () => api.get(`/members/profile/${fetchSlugOrId}/posts`));
+      setUserPosts(postsRes.data.posts || postsRes.data.data || []);
     } catch (e) {
-      setUserPosts([]);
+      try {
+        const postsRes2 = await cacheService.dedupe(`profile-posts-alt:${fetchSlugOrId}`, () => api.get(`/members/${fetchSlugOrId}/posts`));
+        setUserPosts(postsRes2.data.posts || postsRes2.data.data || []);
+      } catch (err) {
+        setUserPosts([]);
+      }
     }
 
     if (isOwner) {
       try {
-        const savedRes = await api.get('/posts', { params: { filter: 'Saved', memberId: targetId } });
+        const savedRes = await cacheService.dedupe(`saved-posts:${currentMemberId}`, () => api.get('/posts', { params: { filter: 'Saved', memberId: currentMemberId } }));
         setSavedPosts(savedRes.data.data || []);
       } catch (e) {
         setSavedPosts([]);
@@ -215,14 +373,24 @@ export default function ProfilePage() {
 
   const handleSaveProfile = async (e) => {
     e.preventDefault();
+    if (!isOwnProfile) {
+      alert('You can only edit your own profile.');
+      setIsEditing(false);
+      return;
+    }
     setIsSavingProfile(true);
     try {
+      const targetId = profile?._id || currentUserId;
       const res = await api.patch(`/members/${targetId}/profile`, editForm);
       if (res.data.success) {
         setProfile(res.data.data);
       }
     } catch (err) {
-      setProfile(prev => ({ ...prev, ...editForm }));
+      if (err.response?.status === 403) {
+        alert(err.response?.data?.message || 'You can only edit your own profile.');
+      } else {
+        setProfile(prev => ({ ...prev, ...editForm }));
+      }
     }
     setIsSavingProfile(false);
     setIsEditing(false);
@@ -302,33 +470,39 @@ export default function ProfilePage() {
       <main className="flex-1 py-10 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto w-full space-y-8">
         
         <TechHeader
-          tag="08 // DEVELOPER PROFILE"
+          tag="MEMBER PROFILE"
           title={isOwner ? "Your Student Developer Identity" : `${profile?.name || 'Member'}'s Developer Profile`}
           description="Official chapter credentials, member contributions, skills, and community activity."
         />
 
         {loading ? (
           <div className="text-center py-16 text-gray-400 font-mono">Loading Member Profile...</div>
-        ) : profile && (
+        ) : profile ? (
           <div className="space-y-8">
 
             {/* Profile Banner & Header Card */}
-            <TechCard className="border-[#30363d] bg-[#121721] overflow-hidden">
+            <TechCard className="border-[#30363d] bg-[#121721] overflow-hidden p-0">
               
-              {/* Optional Cover Banner */}
-              <div className="h-36 sm:h-48 w-full bg-gradient-to-r from-[#18202c] via-[#121721] to-[#1e1338] relative">
+              {/* Cover Banner */}
+              <div className="h-44 sm:h-60 w-full bg-gradient-to-r from-[#18202c] via-[#121721] to-[#1e1338] relative">
                 {isValidMediaUrl(profile.coverPhoto) && !coverError && (
                   <img
                     src={profile.coverPhoto}
                     alt="Cover"
-                    className="w-full h-full object-cover opacity-60"
+                    className="w-full h-full object-cover"
                     onError={() => setCoverError(true)}
                   />
                 )}
+                
+                {/* Bottom gradient overlay for smooth card transition */}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#121721] via-black/20 to-transparent pointer-events-none" />
+
+                {/* SINGLE EDIT PROFILE BUTTON (ONLY FOR OWNER) */}
                 {isOwner && (
                   <button
+                    type="button"
                     onClick={() => setIsEditing(true)}
-                    className="absolute top-4 right-4 px-3 py-1.5 rounded-xl bg-black/60 hover:bg-black/80 text-white text-xs font-mono font-bold border border-[#30363d] backdrop-blur hidden md:flex items-center gap-1.5 transition-colors"
+                    className="absolute top-4 right-4 px-3.5 py-1.5 rounded-xl bg-[#121721]/90 hover:bg-[#2f9e44] text-white text-xs font-mono font-bold border border-[#30363d] hover:border-[#2f9e44] backdrop-blur transition-all flex items-center gap-1.5 shadow-lg z-20 cursor-pointer"
                   >
                     <Edit3 className="w-3.5 h-3.5" /> Edit Profile
                   </button>
@@ -336,64 +510,102 @@ export default function ProfilePage() {
               </div>
 
               {/* Profile Details Header */}
-              <div className="p-6 sm:p-8 -mt-16 sm:-mt-20 relative z-10 space-y-6">
-                <div className="flex flex-col sm:flex-row items-center sm:items-end justify-between gap-4 text-center sm:text-left">
-                  <div className="flex flex-col sm:flex-row items-center sm:items-end gap-5">
-                    <img
-                      src={avatarError ? resolveAvatarUrl('', profile.name) : resolveAvatarUrl(profile.photo, profile.name)}
-                      alt={profile.name}
-                      className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover border-4 border-[#2f9e44] bg-[#0a0d12] shadow-2xl"
-                      onError={() => setAvatarError(true)}
-                    />
-                    <div className="space-y-1.5">
-                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                        <h1 className="text-2xl sm:text-3xl font-extrabold text-white">{profile.name}</h1>
+              <div className="p-5 sm:p-7 -mt-16 sm:-mt-20 relative z-10 space-y-4">
+                <div className="flex flex-col md:flex-row items-center md:items-end justify-between gap-4 text-center md:text-left">
+                  
+                  {/* Left: Avatar + Identity Group */}
+                  <div className="flex flex-col sm:flex-row items-center sm:items-end gap-4 sm:gap-5 w-full md:w-auto">
+                    
+                    {/* Avatar */}
+                    <div className="relative group/avatar flex-shrink-0">
+                      <img
+                        src={avatarError ? resolveAvatarUrl('', profile.name) : resolveAvatarUrl(profile.photo, profile.name)}
+                        alt={profile.name}
+                        className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl object-cover border-4 border-[#2f9e44] bg-[#0a0d12] shadow-2xl"
+                        onError={() => setAvatarError(true)}
+                      />
+                    </div>
+
+                    {/* Name + Username + Roles + University Metadata Block */}
+                    <div className="space-y-1.5 min-w-0 flex-1">
+                      
+                      {/* Name */}
+                      <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-tight capitalize">
+                        {profile.name}
+                      </h1>
+
+                      {/* @Username */}
+                      <p className="text-xs sm:text-sm font-mono font-bold text-[#2f9e44]">
+                        {formatDisplayHandle(profile.username, profile.name)}
+                      </p>
+
+                      {/* Official Role Badge + User ID Pill */}
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-0.5">
                         <RoleBadge role={profile.role || 'Visitor'} />
+
+                        {profile.userCode && (
+                          <span className="px-2.5 py-1 rounded-lg bg-[#18202c] border border-[#30363d] font-mono text-[11px] font-bold text-gray-300 shadow-sm">
+                            User ID: <span className="text-[#2f9e44]">{profile.userCode}</span>
+                          </span>
+                        )}
+
                         {profile.accountType === 'Visitor' && (
-                          <span className="px-2.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 font-mono text-[10px] font-bold uppercase">
+                          <span className="px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/30 font-mono text-[10px] font-bold uppercase tracking-wider">
                             Visitor Account
                           </span>
                         )}
                       </div>
-                      <p className="text-xs font-mono text-gray-400">{profile.email} • {profile.teamName || 'General'}</p>
+
+                      {/* Academic / Institution Info */}
+                      <p className="text-xs font-mono text-gray-400 pt-0.5">
+                        {profile.college || 'Jamia Hamdard'} • {profile.department || profile.teamName || 'Computer Science & Engineering'}
+                      </p>
+
                     </div>
                   </div>
 
-                  {isOwner && (
-                    <button
-                      onClick={() => setIsEditing(true)}
-                      className="sm:hidden px-4 py-2 rounded-xl gradient-button text-xs font-bold flex items-center gap-2"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" /> Edit Profile
-                    </button>
-                  )}
+                  {/* Right: Posts Count Badge */}
+                  <div className="flex items-center gap-3 flex-shrink-0 pt-2 md:pt-0">
+                    <div className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#18202c] border border-[#30363d] font-mono text-xs font-bold text-gray-300 shadow-sm">
+                      <span className="text-[#2f9e44] text-sm">{userPosts.length}</span>
+                      <span>{userPosts.length === 1 ? 'Post' : 'Posts'}</span>
+                    </div>
+                  </div>
+
                 </div>
 
                 {/* Bio Statement */}
-                {profile.bio && (
-                  <p className="text-sm text-gray-300 italic leading-relaxed pt-2 border-t border-[#30363d]/60">
-                    "{profile.bio}"
+                {profile.bio && profile.bio.trim() && (
+                  <p className="text-xs sm:text-sm text-gray-300 italic leading-relaxed pt-3 border-t border-[#30363d]/60">
+                    "{profile.bio.trim()}"
                   </p>
                 )}
 
                 {/* Social Links */}
-                <div className="flex flex-wrap items-center gap-3 pt-2">
-                  {profile.github && (
-                    <a href={profile.github} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-[#0a0d12] border border-[#30363d] hover:border-[#2f9e44] text-gray-300 hover:text-white transition-colors">
-                      <Github className="w-4 h-4" />
-                    </a>
-                  )}
-                  {profile.linkedin && (
-                    <a href={profile.linkedin} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-[#0a0d12] border border-[#30363d] hover:border-[#2f9e44] text-gray-300 hover:text-white transition-colors">
-                      <Linkedin className="w-4 h-4" />
-                    </a>
-                  )}
-                  {profile.portfolio && (
-                    <a href={profile.portfolio} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-[#0a0d12] border border-[#30363d] hover:border-[#2f9e44] text-gray-300 hover:text-white transition-colors">
-                      <Globe className="w-4 h-4" />
-                    </a>
-                  )}
-                </div>
+                {(profile.github || profile.linkedin || profile.portfolio || profile.instagram || profile.website) && (
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 pt-1">
+                    {profile.github && (
+                      <a href={profile.github} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-[#0a0d12] border border-[#30363d] hover:border-[#2f9e44] text-gray-300 hover:text-white transition-colors" title="GitHub Profile">
+                        <Github className="w-4 h-4" />
+                      </a>
+                    )}
+                    {profile.linkedin && (
+                      <a href={profile.linkedin} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-[#0a0d12] border border-[#30363d] hover:border-[#2f9e44] text-gray-300 hover:text-white transition-colors" title="LinkedIn Profile">
+                        <Linkedin className="w-4 h-4" />
+                      </a>
+                    )}
+                    {profile.portfolio && (
+                      <a href={profile.portfolio} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-[#0a0d12] border border-[#30363d] hover:border-[#2f9e44] text-gray-300 hover:text-white transition-colors" title="Portfolio / Website">
+                        <Globe className="w-4 h-4" />
+                      </a>
+                    )}
+                    {profile.instagram && (
+                      <a href={profile.instagram} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-[#0a0d12] border border-[#30363d] hover:border-[#2f9e44] text-gray-300 hover:text-white transition-colors" title="Instagram Profile">
+                        <Instagram className="w-4 h-4" />
+                      </a>
+                    )}
+                  </div>
+                )}
 
               </div>
             </TechCard>
@@ -487,43 +699,25 @@ export default function ProfilePage() {
 
             {/* TAB CONTENT: POSTS */}
             {activeTab === 'posts' && (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 {userPosts.length === 0 ? (
-                  <TechCard className="p-12 text-center bg-[#121721] border-[#30363d]">
-                    <p className="text-sm text-gray-400">No community posts created yet.</p>
+                  <TechCard className="p-12 text-center bg-[#121721] border-[#30363d] space-y-2">
+                    <p className="text-sm font-bold text-white">No community posts created yet.</p>
+                    <p className="text-xs text-gray-400">Share study notes, projects, or questions in the Community Feed!</p>
                   </TechCard>
                 ) : (
                   userPosts.map((post) => (
-                    <TechCard key={post._id} className="p-5 bg-[#121721] border-[#30363d] space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-mono font-bold text-[#2f9e44] uppercase px-2 py-0.5 rounded bg-[#2f9e44]/15 border border-[#2f9e44]/30">
-                            {post.postType}
-                          </span>
-                          <span className="text-[10px] text-gray-400 font-mono">{new Date(post.createdAt).toLocaleDateString()}</span>
-                        </div>
-
-                        {isOwner && (
-                          <button
-                            onClick={() => handleDeleteOwnPost(post._id)}
-                            className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white transition-colors"
-                            title="Delete Post"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-
-                      <Link to={`/community/post/${post._id}`} className="text-base font-bold text-white hover:text-[#2f9e44] block">
-                        {post.title || post.content.substring(0, 60)}
-                      </Link>
-                      <p className="text-xs text-gray-300 line-clamp-2">{post.content}</p>
-
-                      <div className="flex items-center gap-4 text-xs text-gray-400 pt-2 border-t border-[#30363d]">
-                        <span className="flex items-center gap-1"><Heart className="w-3.5 h-3.5 text-red-400" /> {post.likesCount || 0}</span>
-                        <span className="flex items-center gap-1"><MessageSquare className="w-3.5 h-3.5 text-gray-400" /> {post.commentsCount || 0}</span>
-                      </div>
-                    </TechCard>
+                    <PostCard
+                      key={post._id}
+                      post={post}
+                      currentMemberId={currentMemberId}
+                      user={user}
+                      onLike={handleLike}
+                      onBookmark={handleBookmark}
+                      onDelete={handleDeleteOwnPost}
+                      onReport={(p) => setReportingTarget({ targetType: 'post', targetId: p._id })}
+                      onOpenComments={(id) => navigate(`/community/post/${id}`)}
+                    />
                   ))
                 )}
               </div>
@@ -531,26 +725,25 @@ export default function ProfilePage() {
 
             {/* TAB CONTENT: SAVED POSTS (OWNER ONLY) */}
             {activeTab === 'saved' && isOwner && (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 {savedPosts.length === 0 ? (
-                  <TechCard className="p-12 text-center bg-[#121721] border-[#30363d]">
-                    <p className="text-sm text-gray-400">No saved posts in your collection.</p>
+                  <TechCard className="p-12 text-center bg-[#121721] border-[#30363d] space-y-2">
+                    <p className="text-sm font-bold text-white">No saved posts yet.</p>
+                    <p className="text-xs text-gray-400">Bookmark posts in Community Feed to easily access them here!</p>
                   </TechCard>
                 ) : (
                   savedPosts.map((post) => (
-                    <TechCard key={post._id} className="p-5 bg-[#121721] border-[#30363d] space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono font-bold text-[#2f9e44] uppercase px-2 py-0.5 rounded bg-[#2f9e44]/15 border border-[#2f9e44]/30">
-                          {post.postType}
-                        </span>
-                        <span className="text-[10px] text-gray-400 font-mono">Saved Post</span>
-                      </div>
-
-                      <Link to={`/community/post/${post._id}`} className="text-base font-bold text-white hover:text-[#2f9e44] block">
-                        {post.title || post.content.substring(0, 60)}
-                      </Link>
-                      <p className="text-xs text-gray-300 line-clamp-2">{post.content}</p>
-                    </TechCard>
+                    <PostCard
+                      key={post._id}
+                      post={post}
+                      currentMemberId={currentMemberId}
+                      user={user}
+                      onLike={handleLike}
+                      onBookmark={handleBookmark}
+                      onDelete={handleDeleteOwnPost}
+                      onReport={(p) => setReportingTarget({ targetType: 'post', targetId: p._id })}
+                      onOpenComments={(id) => navigate(`/community/post/${id}`)}
+                    />
                   ))
                 )}
               </div>
@@ -639,10 +832,19 @@ export default function ProfilePage() {
             )}
 
           </div>
+        ) : (
+          <TechCard className="p-12 text-center space-y-4 bg-[#121721] border-[#30363d] rounded-2xl">
+            <User className="w-12 h-12 text-gray-500 mx-auto" />
+            <h3 className="text-lg font-bold text-white">Member Profile Unavailable</h3>
+            <p className="text-xs text-gray-400 font-mono">This member profile could not be found or has been removed.</p>
+            <Link to="/community" className="inline-block px-5 py-2.5 rounded-xl gradient-button text-xs font-bold">
+              ← Return to Community Feed
+            </Link>
+          </TechCard>
         )}
 
-        {/* PROFILE EDIT MODAL */}
-        {isEditing && (
+        {/* PROFILE EDIT MODAL (STRICTLY OWNER ONLY) */}
+        {isEditing && isOwnProfile && (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
             <TechCard className="w-full max-w-2xl p-6 sm:p-8 bg-[#121721] border-[#2f9e44] space-y-6 max-h-[90vh] overflow-y-auto">
               {/* Upload Error Banner */}
@@ -703,7 +905,7 @@ export default function ProfilePage() {
                       </div>
                     )}
 
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                       <button
                         type="button"
                         onClick={() => coverInputRef.current?.click()}
@@ -711,6 +913,15 @@ export default function ProfilePage() {
                       >
                         <Camera className="w-3.5 h-3.5" /> Change Cover
                       </button>
+                      {editForm.coverPhoto && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAdjustCrop('cover')}
+                          className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow flex items-center gap-1.5"
+                        >
+                          <Crop className="w-3.5 h-3.5" /> Adjust Crop
+                        </button>
+                      )}
                       {editForm.coverPhoto && (
                         <button
                           type="button"
@@ -758,6 +969,15 @@ export default function ProfilePage() {
                         >
                           <Camera className="w-3.5 h-3.5" /> Change Photo
                         </button>
+                        {editForm.photo && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAdjustCrop('avatar')}
+                            className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow"
+                          >
+                            <Crop className="w-3.5 h-3.5" /> Adjust Crop
+                          </button>
+                        )}
                         {editForm.photo && (
                           <button
                             type="button"
@@ -877,8 +1097,23 @@ export default function ProfilePage() {
                   <button type="button" onClick={() => setIsEditing(false)} className="px-4 py-2 rounded-xl bg-[#18202c] text-xs font-bold text-gray-300">
                     Cancel
                   </button>
-                  <button type="submit" disabled={isSavingProfile} className="px-6 py-2 rounded-xl gradient-button text-xs font-bold">
-                    {isSavingProfile ? 'Saving...' : 'Save Profile Changes'}
+                  <button
+                    type="submit"
+                    disabled={isSavingProfile || isUploadingPhoto || isUploadingCover}
+                    className={`px-6 py-2 rounded-xl gradient-button text-xs font-bold flex items-center gap-2 ${
+                      isSavingProfile || isUploadingPhoto || isUploadingCover ? 'opacity-70 cursor-not-allowed' : ''
+                    }`}
+                  >
+                    {(isSavingProfile || isUploadingPhoto || isUploadingCover) && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>
+                      {isUploadingPhoto
+                        ? 'Uploading Photo...'
+                        : isUploadingCover
+                        ? 'Uploading Cover...'
+                        : isSavingProfile
+                        ? 'Saving Profile...'
+                        : 'Save Profile Changes'}
+                    </span>
                   </button>
                 </div>
 
@@ -886,8 +1121,21 @@ export default function ProfilePage() {
             </TechCard>
           </div>
         )}
-
       </main>
+
+      {/* Image Crop Modal for Avatar & Cover */}
+      <ImageCropModal
+        isOpen={cropModalOpen}
+        imageSrc={cropSource}
+        presetKey={cropPresetKey}
+        title={cropPresetKey === 'avatar' ? 'Adjust Profile Photo (1:1 Circular)' : 'Adjust Cover Photo (3:1)'}
+        onClose={() => {
+          setCropModalOpen(false);
+          setCropSource(null);
+        }}
+        onApplyCrop={handleApplyCroppedProfileImage}
+      />
+
       <Footer />
     </div>
   );

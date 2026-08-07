@@ -84,3 +84,26 @@ export const getValidMediaUrl = (url, fallback = '') => {
 export const resolveAvatarUrl = (photo, name = 'Member') => {
   return getValidMediaUrl(photo, defaultAvatarUrl(name));
 };
+
+/**
+ * Formats a clean public handle (e.g., @saquib).
+ * Filters out raw 24-character hexadecimal MongoDB ObjectIds (e.g., @6a75009228efef477da1f814).
+ *
+ * @param {string|null|undefined} username Candidate username
+ * @param {string|null|undefined} name     Fallback member name
+ * @returns {string} Clean handle starting with @
+ */
+export const formatDisplayHandle = (username, name = '') => {
+  if (username && typeof username === 'string') {
+    const clean = username.trim().replace(/^@/, '');
+    // If it's NOT a 24-character hexadecimal MongoDB ObjectId, return clean username
+    if (clean && !/^[0-9a-fA-F]{24}$/.test(clean)) {
+      return `@${clean}`;
+    }
+  }
+  if (name && typeof name === 'string') {
+    const cleanName = name.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    if (cleanName) return `@${cleanName}`;
+  }
+  return '@member';
+};

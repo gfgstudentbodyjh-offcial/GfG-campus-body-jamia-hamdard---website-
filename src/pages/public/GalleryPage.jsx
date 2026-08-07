@@ -7,29 +7,41 @@ import { ArrowUpRight } from 'lucide-react';
 import GalleryLightbox from '../../components/common/GalleryLightbox';
 import TechHeader from '../../components/common/TechHeader';
 
+import cacheService from '../../services/cacheService';
+
 export default function GalleryPage() {
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(() => {
+    const cached = cacheService.get('gallery');
+    return cached?.data || [];
+  });
   const [albumFilter, setAlbumFilter] = useState('All');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    const cached = cacheService.get('gallery');
+    return !(cached && cached.data && cached.data.length > 0);
+  });
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   const albums = ['All', 'Event Gallery', 'Community Gallery'];
 
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const res = await api.get('/gallery');
+    const unsub = cacheService.subscribe('gallery', (data) => {
+      if (Array.isArray(data)) setItems(data);
+    });
+
+    cacheService.dedupe('gallery', () => api.get('/gallery'))
+      .then((res) => {
         const data = res.data.data?.length ? res.data.data : MOCK_GALLERY;
         setItems(data);
-      } catch (err) {
+        cacheService.set('gallery', data);
+      })
+      .catch((err) => {
         console.warn(err);
-        setItems(MOCK_GALLERY);
-      }
-      setLoading(false);
-    };
-    load();
+        if (items.length === 0) setItems(MOCK_GALLERY);
+      })
+      .finally(() => setLoading(false));
+
+    return unsub;
   }, []);
 
   const filteredItems = albumFilter === 'All'
@@ -49,7 +61,7 @@ export default function GalleryPage() {
         
         {/* ─── 1. COMPACT GALLERY HERO ────────────────────────────────────── */}
         <TechHeader
-          tag="06 // COMMUNITY SHOWCASE"
+          tag="OUR COMMUNITY"
           title="Moments that define our journey."
           description="Workshops, competitions, collaborations and memories from GeeksforGeeks Campus Body · Jamia Hamdard."
           count={items.length}

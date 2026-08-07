@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import RoleBadge from '../../components/common/RoleBadge';
 import api from '../../services/api';
+import cacheService from '../../services/cacheService';
 import { useAdminTheme } from '../../context/AdminThemeContext';
 import { formatEventDate } from '../../utils/dateUtils';
 import {
@@ -57,6 +58,7 @@ export default function FeedModerationAdmin() {
         action: 'keep'
       });
       alert('Content retained — active reports dismissed.');
+      cacheService.invalidate('feed');
       loadModerationData();
       setContextItem(null);
     } catch (err) {
@@ -70,6 +72,7 @@ export default function FeedModerationAdmin() {
         action: 'restore'
       });
       alert('Content restored to public feed.');
+      cacheService.invalidate('feed');
       loadModerationData();
       setContextItem(null);
     } catch (err) {
@@ -95,6 +98,7 @@ export default function FeedModerationAdmin() {
       setActionModalItem(null);
       setModeratorReason('');
       setContextItem(null);
+      cacheService.invalidate('feed');
       loadModerationData();
     } catch (err) {
       alert('Action failed: ' + (err.response?.data?.message || err.message));

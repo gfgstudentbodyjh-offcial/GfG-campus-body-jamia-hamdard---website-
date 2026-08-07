@@ -10,8 +10,8 @@ export default function HeroSettingsAdmin() {
   const [formData, setFormData] = useState({
     siteTitle: 'GeeksforGeeks Student Chapter | Jamia Hamdard',
     metaDescription: 'Official GeeksforGeeks Student Chapter Community Management Platform',
-    heroHeading: 'Empowering Innovators, Coders & Future Tech Leaders',
-    heroSubheading: 'Master Data Structures, Full-Stack Web Dev, Artificial Intelligence & Competitive Programming with Jamia Hamdard’s official GFG Campus Body.',
+    heroHeading: 'Learn. Build. Grow Together.',
+    heroSubheading: 'GeeksforGeeks Campus Body at Jamia Hamdard is a student-led tech community where students learn together, build projects, prepare for opportunities, and connect through workshops, events, hackathons, and peer learning.',
     ctaText: 'Explore Upcoming Events',
     ctaLink: '#events',
     heroBgUrl: '',

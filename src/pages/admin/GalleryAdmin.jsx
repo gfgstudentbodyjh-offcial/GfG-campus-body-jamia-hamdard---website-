@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ContentCrudModule from '../../components/admin/ContentCrudModule';
 import api from '../../services/api';
+import cacheService from '../../services/cacheService';
 import { useAdminTheme } from '../../context/AdminThemeContext';
-import { Edit3, Trash2, Camera, Star, X, UploadCloud, CheckCircle2, Image as ImageIcon } from 'lucide-react';
+import { Edit3, Trash2, Camera, Star, X, UploadCloud, CheckCircle2, Image as ImageIcon, Crop, Loader2 } from 'lucide-react';
+import ImageCropModal from '../../components/common/ImageCropModal';
 
 export default function GalleryAdmin() {
   const { isLight } = useAdminTheme();
@@ -14,6 +16,12 @@ export default function GalleryAdmin() {
   // Modals state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Image Crop State
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropSource, setCropSource] = useState(null);
+  const [cropBatchIndex, setCropBatchIndex] = useState(null);
 
   // File Input Ref for native multi-image picker
   const multiFileInputRef = useRef(null);
@@ -58,34 +66,71 @@ export default function GalleryAdmin() {
     );
   });
 
-  const handleSinglePhotoUpload = async (e) => {
+  const handleSinglePhotoUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setIsUploadingPhoto(true);
+    setCropSource(file);
+    setCropBatchIndex(null);
+    setCropModalOpen(true);
+  };
 
-    try {
-      const body = new FormData();
-      body.append('file', file);
-      body.append('folder', 'Gallery');
+  const handleOpenAdjustCropSingle = () => {
+    if (!formData.url) return;
+    setCropSource(formData.url);
+    setCropBatchIndex(null);
+    setCropModalOpen(true);
+  };
 
-      const res = await api.post('/media/upload', body, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+  const handleOpenAdjustCropBatch = (index) => {
+    const item = selectedFiles[index];
+    if (!item) return;
+    setCropSource(item.file || item.preview);
+    setCropBatchIndex(index);
+    setCropModalOpen(true);
+  };
 
-      const cloudUrl = res.data?.media?.url || res.data?.data?.url || res.data?.url;
-      const cloudPublicId = res.data?.media?.publicId || res.data?.data?.publicId || '';
+  const handleApplyCroppedGalleryImage = async ({ croppedFile, croppedUrl }) => {
+    if (!croppedFile) return;
 
-      if (cloudUrl && cloudUrl.startsWith('http')) {
-        setFormData(prev => ({ ...prev, url: cloudUrl, publicId: cloudPublicId }));
-      } else {
-        throw new Error('Upload failed');
+    if (cropBatchIndex !== null && cropBatchIndex >= 0) {
+      // Update item in batch upload list
+      setSelectedFiles(prev => prev.map((item, idx) => {
+        if (idx === cropBatchIndex) {
+          return {
+            ...item,
+            file: croppedFile,
+            preview: croppedUrl
+          };
+        }
+        return item;
+      }));
+    } else {
+      // Upload single cropped photo to Cloudinary directly
+      setIsUploadingPhoto(true);
+      try {
+        const body = new FormData();
+        body.append('file', croppedFile);
+        body.append('folder', 'Gallery');
+
+        const res = await api.post('/media/upload', body, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+
+        const cloudUrl = res.data?.media?.url || res.data?.data?.url || res.data?.url;
+        const cloudPublicId = res.data?.media?.publicId || res.data?.data?.publicId || '';
+
+        if (cloudUrl && cloudUrl.startsWith('http')) {
+          setFormData(prev => ({ ...prev, url: cloudUrl, publicId: cloudPublicId }));
+        } else {
+          throw new Error('Upload failed');
+        }
+      } catch (err) {
+        console.warn('Photo upload error:', err);
+        alert('Photo upload failed. Please try again.');
+      } finally {
+        setIsUploadingPhoto(false);
+        if (singleFileInputRef.current) singleFileInputRef.current.value = '';
       }
-    } catch (err) {
-      console.warn('Photo upload error:', err);
-      alert('Photo upload failed. Please try again.');
-    } finally {
-      setIsUploadingPhoto(false);
-      if (singleFileInputRef.current) singleFileInputRef.current.value = '';
     }
   };
 
@@ -195,6 +240,7 @@ export default function GalleryAdmin() {
         await api.post('/gallery/batch', { items: uploadedDocs });
         setIsUploadModalOpen(false);
         setSelectedFiles([]);
+        cacheService.invalidate('gallery');
         loadItems();
       } else {
         alert('Batch upload failed. No images were uploaded.');
@@ -215,7 +261,8 @@ export default function GalleryAdmin() {
     if (!window.confirm('Delete gallery photo permanently?')) return;
     try {
       await api.delete(`/gallery/${id}`);
-      loadItems();
+      setItems(prev => prev.filter(g => g._id !== id));
+      cacheService.invalidate('gallery');
     } catch (err) {
       alert(err.response?.data?.message || err.message || 'Delete failed');
     }
@@ -361,13 +408,24 @@ export default function GalleryAdmin() {
                     {selectedFiles.map((item, idx) => (
                       <div key={idx} className="relative group rounded-xl overflow-hidden aspect-square border border-[#30363d]">
                         <img src={item.preview} alt="Preview" className="w-full h-full object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveFilePreview(idx)}
-                          className="absolute top-1 right-1 p-1 rounded-full bg-red-600 text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-1">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAdjustCropBatch(idx)}
+                            className="p-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold shadow flex items-center gap-1"
+                            title="Adjust Framing / Crop"
+                          >
+                            <Crop className="w-3.5 h-3.5" /> Crop
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFilePreview(idx)}
+                            className="p-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold shadow"
+                            title="Remove"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -378,9 +436,12 @@ export default function GalleryAdmin() {
                 type="button"
                 disabled={selectedFiles.length === 0 || uploadProgress}
                 onClick={handleBatchUploadSubmit}
-                className="w-full py-3 rounded-xl gradient-button font-bold text-xs shadow-lg disabled:opacity-50"
+                className="w-full py-3 rounded-xl gradient-button font-bold text-xs shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {uploadProgress ? `Uploading ${selectedFiles.length} Photos to Cloudinary...` : `Upload ${selectedFiles.length} Photos to Album`}
+                {uploadProgress && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>
+                  {uploadProgress ? `Uploading ${selectedFiles.length} Photos to Cloudinary...` : `Upload ${selectedFiles.length} Photos to Album`}
+                </span>
               </button>
             </div>
           </div>
@@ -411,13 +472,20 @@ export default function GalleryAdmin() {
                 {formData.url ? (
                   <div className="relative rounded-2xl overflow-hidden border border-[#30363d] aspect-video group bg-black/40">
                     <img src={formData.url} alt="Gallery Asset" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-3 transition-opacity">
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-opacity p-2">
                       <button
                         type="button"
                         onClick={() => singleFileInputRef.current?.click()}
-                        className="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold backdrop-blur-md transition-colors"
+                        className="px-3 py-1.5 rounded-xl bg-[#2f9e44] hover:bg-[#258337] text-white text-xs font-bold shadow flex items-center gap-1"
                       >
-                        Change Photo
+                        <Camera className="w-3.5 h-3.5" /> Change
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleOpenAdjustCropSingle}
+                        className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow flex items-center gap-1"
+                      >
+                        <Crop className="w-3.5 h-3.5" /> Adjust Crop
                       </button>
                       <button
                         type="button"
@@ -500,15 +568,30 @@ export default function GalleryAdmin() {
 
               <button
                 type="submit"
-                disabled={isUploadingPhoto}
-                className="w-full py-3 rounded-xl gradient-button font-bold text-xs shadow-lg disabled:opacity-50"
+                disabled={isUploadingPhoto || isSaving}
+                className="w-full py-3 rounded-xl gradient-button font-bold text-xs shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {isUploadingPhoto ? 'Uploading Photo...' : 'Save Photo Details'}
+                {(isUploadingPhoto || isSaving) && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>{isUploadingPhoto ? 'Uploading Photo...' : isSaving ? 'Saving Photo...' : 'Save Photo Details'}</span>
               </button>
             </form>
           </div>
         </div>
       )}
+
+      {/* Image Crop Modal for Gallery */}
+      <ImageCropModal
+        isOpen={cropModalOpen}
+        imageSrc={cropSource}
+        presetKey="gallery"
+        title="Adjust Gallery Photo Framing"
+        onClose={() => {
+          setCropModalOpen(false);
+          setCropSource(null);
+          setCropBatchIndex(null);
+        }}
+        onApplyCrop={handleApplyCroppedGalleryImage}
+      />
 
     </div>
   );

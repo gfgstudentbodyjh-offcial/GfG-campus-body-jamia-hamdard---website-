@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ContentCrudModule from '../../components/admin/ContentCrudModule';
 import api from '../../services/api';
+import cacheService from '../../services/cacheService';
 import { useAdminTheme } from '../../context/AdminThemeContext';
 import { formatEventDate } from '../../utils/dateUtils';
-import { Edit3, Trash2, Camera, CheckCircle2, Calendar, Link as LinkIcon, Plus, X } from 'lucide-react';
+import { Edit3, Trash2, Camera, CheckCircle2, Calendar, Link as LinkIcon, Plus, X, Crop, Loader2 } from 'lucide-react';
+import ImageCropModal from '../../components/common/ImageCropModal';
 
 export default function EventsAdmin() {
   const { isLight } = useAdminTheme();
@@ -12,9 +14,12 @@ export default function EventsAdmin() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const bannerInputRef = useRef(null);
   const [isUploadingBanner, setIsUploadingBanner] = useState(false);
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropImageSource, setCropImageSource] = useState(null);
 
   const statuses = ['All', 'Upcoming', 'Registration Open', 'Announced', 'Planning', 'Live', 'Completed', 'Draft', 'Archived'];
 
@@ -89,15 +94,26 @@ export default function EventsAdmin() {
     setIsModalOpen(true);
   };
 
-  const handleBannerSelect = async (e) => {
+  const handleBannerSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setCropImageSource(file);
+    setCropModalOpen(true);
+  };
 
+  const handleOpenAdjustCrop = () => {
+    if (!formData.banner) return;
+    setCropImageSource(formData.banner);
+    setCropModalOpen(true);
+  };
+
+  const handleApplyCroppedBanner = async ({ croppedFile }) => {
+    if (!croppedFile) return;
     setIsUploadingBanner(true);
 
     try {
       const body = new FormData();
-      body.append('file', file);
+      body.append('file', croppedFile);
       body.append('folder', 'Events');
 
       const res = await api.post('/media/upload', body, {
@@ -121,8 +137,23 @@ export default function EventsAdmin() {
     }
   };
 
+  const refreshEventData = async () => {
+    cacheService.invalidate('events');
+    try {
+      const res = await api.get('/events');
+      const freshData = res.data?.data || [];
+      setEvents(freshData);
+      cacheService.set('events', freshData);
+    } catch (e) {
+      console.warn('Failed to refresh event cache:', e);
+    }
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
+    if (isSaving || isUploadingBanner) return;
+
+    setIsSaving(true);
     try {
       const payload = { ...formData };
       if (!payload._id) delete payload._id;
@@ -133,9 +164,11 @@ export default function EventsAdmin() {
         await api.post('/events', payload);
       }
       setIsModalOpen(false);
-      loadData();
+      await refreshEventData();
     } catch (err) {
       alert('Save failed: ' + (err.response?.data?.message || err.response?.data?.error || err.message));
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -143,7 +176,7 @@ export default function EventsAdmin() {
     if (!window.confirm('Mark this event as completed? It will move to past events.')) return;
     try {
       await api.patch(`/events/${id}/complete`);
-      loadData();
+      await refreshEventData();
     } catch (err) {
       alert('Action failed');
     }
@@ -158,7 +191,7 @@ export default function EventsAdmin() {
     if (!window.confirm('Delete event permanently?')) return;
     try {
       await api.delete(`/events/${id}`);
-      loadData();
+      await refreshEventData();
     } catch (err) {
       alert(err.response?.data?.message || err.message || 'Delete failed');
     }
@@ -227,42 +260,50 @@ export default function EventsAdmin() {
                 {ev.status || 'Upcoming'}
               </span>
             </td>
-            <td className="px-6 py-4 text-right space-x-2">
-              {ev.status !== 'Completed' && (
-                <button
-                  onClick={() => handleMarkCompleted(ev._id)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors ${
-                    isLight
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                      : 'bg-[#2f9e44]/20 hover:bg-[#2f9e44] text-[#2f9e44] hover:text-white border-[#2f9e44]/30'
-                  }`}
-                  title="Mark Event Completed"
-                >
-                  Mark Completed
-                </button>
-              )}
-              <button
-                onClick={() => handleOpenEdit(ev)}
-                className={`p-2 rounded-lg border transition-colors ${
-                  isLight
-                    ? 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
-                    : 'bg-[#21262d] text-gray-300 border-[#30363d] hover:text-white'
-                }`}
-                title="Edit Event"
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => handleDelete(ev._id)}
-                className={`p-2 rounded-lg border transition-colors ${
-                  isLight
-                    ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'
-                    : 'bg-[#21262d] text-red-400 border-[#30363d] hover:bg-red-500/20'
-                }`}
-                title="Delete Event"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
+            <td className="px-6 py-4 text-center min-w-[150px]">
+              <div className="flex flex-col items-center justify-center gap-2">
+                {ev.status !== 'Completed' && (
+                  <button
+                    onClick={() => handleMarkCompleted(ev._id)}
+                    className={`w-[125px] h-[32px] px-2.5 rounded-full text-[11px] font-bold border flex items-center justify-center gap-1.5 transition-all duration-150 active:scale-95 shadow-xs ${
+                      isLight
+                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
+                        : 'bg-[#2f9e44]/15 hover:bg-[#2f9e44]/30 text-emerald-400 border-[#2f9e44]/40'
+                    }`}
+                    title="Mark Event Completed"
+                    aria-label="Mark Event Completed"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <span>Mark Completed</span>
+                  </button>
+                )}
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => handleOpenEdit(ev)}
+                    className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 ${
+                      isLight
+                        ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300/80 shadow-xs'
+                        : 'bg-[#21262d] hover:bg-[#30363d] text-gray-200 border-[#363b42]'
+                    }`}
+                    title="Edit event"
+                    aria-label="Edit event"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(ev._id)}
+                    className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-all duration-150 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 ${
+                      isLight
+                        ? 'bg-red-50 hover:bg-red-100 text-red-600 border-red-200/80 shadow-xs'
+                        : 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/25'
+                    }`}
+                    title="Delete event"
+                    aria-label="Delete event"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </td>
           </tr>
         )}
@@ -306,19 +347,28 @@ export default function EventsAdmin() {
                     </div>
                   )}
 
-                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-2">
                     <button
                       type="button"
                       onClick={() => bannerInputRef.current?.click()}
-                      className="px-3.5 py-1.5 rounded-xl bg-[#2f9e44] text-white font-bold flex items-center gap-1.5 shadow"
+                      className="px-3 py-1.5 rounded-xl bg-[#2f9e44] hover:bg-[#258337] text-white font-bold flex items-center gap-1 shadow text-[11px]"
                     >
-                      <Camera className="w-3.5 h-3.5" /> Upload Thumbnail
+                      <Camera className="w-3.5 h-3.5" /> {formData.banner ? 'Change' : 'Upload'}
                     </button>
                     {formData.banner && (
                       <button
                         type="button"
+                        onClick={handleOpenAdjustCrop}
+                        className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1 shadow text-[11px]"
+                      >
+                        <Crop className="w-3.5 h-3.5" /> Adjust Crop
+                      </button>
+                    )}
+                    {formData.banner && (
+                      <button
+                        type="button"
                         onClick={() => setFormData(prev => ({ ...prev, banner: '' }))}
-                        className="px-3.5 py-1.5 rounded-xl bg-red-500 text-white font-bold shadow"
+                        className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold shadow text-[11px]"
                       >
                         Remove
                       </button>
@@ -412,13 +462,41 @@ export default function EventsAdmin() {
                 </select>
               </div>
 
-              <button type="submit" className="w-full py-3 rounded-xl gradient-button font-bold text-xs shadow-lg">
-                Save Event Record
+              <button
+                type="submit"
+                disabled={isUploadingBanner || isSaving}
+                className={`w-full py-3 rounded-xl gradient-button font-bold text-xs shadow-lg flex items-center justify-center gap-2 ${
+                  isUploadingBanner || isSaving ? 'opacity-70 cursor-not-allowed' : 'hover:opacity-95'
+                }`}
+              >
+                {(isUploadingBanner || isSaving) && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>
+                  {isUploadingBanner
+                    ? 'Uploading Thumbnail...'
+                    : isSaving
+                    ? 'Saving Event...'
+                    : formData._id
+                    ? 'Save Changes'
+                    : 'Save Event Record'}
+                </span>
               </button>
             </form>
           </div>
         </div>
       )}
+
+      {/* Image Crop Modal */}
+      <ImageCropModal
+        isOpen={cropModalOpen}
+        imageSrc={cropImageSource}
+        presetKey="eventThumbnail"
+        title="Adjust Event Thumbnail (16:9)"
+        onClose={() => {
+          setCropModalOpen(false);
+          setCropImageSource(null);
+        }}
+        onApplyCrop={handleApplyCroppedBanner}
+      />
 
     </div>
   );

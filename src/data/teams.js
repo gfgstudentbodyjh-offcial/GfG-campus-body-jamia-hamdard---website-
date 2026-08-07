@@ -9,7 +9,7 @@ export const MOCK_TEAMS = [
       name: 'Md Tanzeel Nasim',
       title: 'Community Lead',
       photo: '/assets/team/community-lead-tanzeel.jpg',
-      imagePosition: 'center 28%',
+      imagePosition: 'center 45%',
       message: "Hello everyone! I'm Md Tanzeel Nasim, It is an honor to serve as the Community Lead of the GeeksforGeeks Campus Body Jamia Hamdard. My vision is to foster a collaborative and innovation-driven community where students can enhance their technical skills, explore emerging technologies, and grow together.",
       socials: {
         instagram: 'https://www.instagram.com/tanzeel.nasim?igsh=ZG13YTlkY2djZnI4',

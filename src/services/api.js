@@ -86,7 +86,13 @@ const FALLBACK_MAP = {
     }
     return { data };
   },
-  '/announcements': () => ({ data: MOCK_ANNOUNCEMENTS })
+  '/announcements': () => ({ data: MOCK_ANNOUNCEMENTS }),
+  '/members/active': () => ({
+    data: [
+      { _id: 'm_saquib', name: 'Saquib Sarfaraz', username: 'saquib', role: 'Campus Mantri', teamName: 'Executive Bureau', activityScore: 76 },
+      { _id: 'm_aisha', name: 'Aisha Khan', username: 'aisha', role: 'Technical Lead', teamName: 'Technical Team', activityScore: 34 }
+    ]
+  })
 };
 
 // ─── Response Interceptor: Auto-fallback to dummy data on error ─────────────────
@@ -110,9 +116,29 @@ api.interceptors.response.use(
         }
       }
 
-      // Specific pattern matches (e.g., /forms/:id, /posts/:id/comments)
-      if (url.match(/^\/forms\/.+$/)) {
-        console.warn(`[API Fallback] Backend offline for ${url}, serving dummy form.`);
+      // Specific pattern matches (e.g., /forms/:id, /posts/:id/comments, /members/:id)
+      if (cleanUrl !== '/members/active' && cleanUrl.match(/^\/members\/.+$/)) {
+        console.warn(`[API Fallback] Backend response fallback for ${rawUrl}.`);
+        return Promise.resolve({
+          data: {
+            success: true,
+            posts: MOCK_POSTS,
+            data: MOCK_POSTS,
+            member: {
+              _id: 'm_saquib',
+              name: 'Saquib Sarfaraz',
+              role: 'Campus Mantri',
+              teamName: 'Core Team',
+              college: 'Jamia Hamdard',
+              department: 'Computer Science & Engineering',
+              photo: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'
+            }
+          }
+        });
+      }
+
+      if (cleanUrl.match(/^\/forms\/.+$/)) {
+        console.warn(`[API Fallback] Backend offline for ${cleanUrl}, serving dummy form.`);
         return Promise.resolve({
           data: {
             data: {
@@ -133,8 +159,8 @@ api.interceptors.response.use(
         });
       }
 
-      if (url.match(/^\/posts\/.+\/comments$/)) {
-        console.warn(`[API Fallback] Backend offline for ${url}, serving dummy comments.`);
+      if (cleanUrl.match(/^\/posts\/.+\/comments$/)) {
+        console.warn(`[API Fallback] Backend offline for ${cleanUrl}, serving dummy comments.`);
         return Promise.resolve({
           data: {
             data: [

@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Calendar, Bell, MessageSquare, Sliders, ImageIcon,
-  BookOpen, Award, Shield, Layers, Users, ShieldCheck, ChevronRight, Sun, Moon, Sparkles
+  BookOpen, Award, Shield, Layers, Users, UserCheck, ShieldCheck, ChevronRight, Sun, Moon, Sparkles
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 

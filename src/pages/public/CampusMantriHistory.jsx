@@ -7,24 +7,31 @@ import { Mail, Linkedin, Github, Instagram, ShieldCheck } from 'lucide-react';
 import TechHeader from '../../components/common/TechHeader';
 import TechCard from '../../components/common/TechCard';
 
+import cacheService from '../../services/cacheService';
+
 export default function CampusMantriHistory() {
-  const [mantris, setMantris] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [mantris, setMantris] = useState(() => {
+    const cached = cacheService.get('mantri', 1800000); // 30 mins TTL
+    return cached?.data || [];
+  });
+  const [loading, setLoading] = useState(() => {
+    const cached = cacheService.get('mantri', 1800000);
+    return !(cached && cached.data && cached.data.length > 0);
+  });
   const [selectedSessionId, setSelectedSessionId] = useState(null);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await api.get('/mantri');
+    cacheService.dedupe('mantri', () => api.get('/mantri'))
+      .then((res) => {
         const raw = res.data.data?.length ? res.data.data : MOCK_MANTRI_LIST;
         setMantris(raw);
-      } catch (err) {
+        cacheService.set('mantri', raw);
+      })
+      .catch((err) => {
         console.warn(err);
-        setMantris(MOCK_MANTRI_LIST);
-      }
-      setLoading(false);
-    };
-    load();
+        if (mantris.length === 0) setMantris(MOCK_MANTRI_LIST);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const sortedMantris = useMemo(() => {
@@ -54,7 +61,7 @@ export default function CampusMantriHistory() {
         
         {/* Page Header */}
         <TechHeader
-          tag="01 // LEADERSHIP ARCHIVE"
+          tag="CAMPUS MANTRI"
           title="Campus Mantri History"
           description="Chronological records of Campus Mantris leading student developer initiatives across academic sessions at Jamia Hamdard."
           count={sortedMantris.length}
@@ -112,7 +119,7 @@ export default function CampusMantriHistory() {
                 <div className="space-y-4 flex-1 text-center md:text-left">
                   <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
                     <span className="inline-block text-xs font-mono font-bold text-[#2f9e44] bg-[#2f9e44]/15 border border-[#2f9e44]/30 px-3 py-1 rounded-md uppercase tracking-wider">
-                      01 // CAMPUS MANTRI • Session {activeMantri.tenure || activeMantri.session}
+                      CAMPUS MANTRI • Session {activeMantri.tenure || activeMantri.session}
                     </span>
                     {activeMantri._id === newestSessionId && (
                       <span className="text-xs font-bold text-white bg-[#2f9e44] px-3 py-1 rounded-md shadow-md flex items-center gap-1">
