@@ -1,8 +1,10 @@
-import React, { useEffect } from 'react';
-import { X, ExternalLink, Download, FileText, Loader2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, ExternalLink, Download, FileText, RefreshCw } from 'lucide-react';
 import { getStreamPdfUrl } from '../../utils/mediaResolver';
 
 export default function PdfPreviewModal({ isOpen, url, title, onClose, onDownload }) {
+  const [useGoogleViewer, setUseGoogleViewer] = useState(true);
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -29,6 +31,12 @@ export default function PdfPreviewModal({ isOpen, url, title, onClose, onDownloa
   // Resolve target stream URL safely for production delivery
   const streamUrl = getStreamPdfUrl(url, { filename: title });
 
+  // Compute Google Docs viewer URL for universal cross-origin/mobile rendering
+  const absoluteTarget = url.startsWith('http') ? url : (streamUrl.startsWith('http') ? streamUrl : `${window.location.origin}${streamUrl}`);
+  const googleViewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(absoluteTarget)}&embedded=true`;
+
+  const activeFrameUrl = useGoogleViewer ? googleViewerUrl : streamUrl;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in">
       <div 
@@ -50,11 +58,21 @@ export default function PdfPreviewModal({ isOpen, url, title, onClose, onDownloa
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setUseGoogleViewer(!useGoogleViewer)}
+              className="px-2.5 py-1.5 rounded-xl bg-[#1c2128] hover:bg-[#2d333b] text-gray-300 text-xs font-mono font-bold border border-[#30363d] flex items-center gap-1.5 transition-colors"
+              title="Toggle Viewer Mode"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-gray-400" />
+              <span className="hidden md:inline">{useGoogleViewer ? 'Direct Mode' : 'Cloud Viewer'}</span>
+            </button>
+
             <a
               href={streamUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3 py-1.5 rounded-xl bg-[#1c2128] hover:bg-[#2d333b] text-gray-200 text-xs font-mono font-bold border border-[#30363d] flex items-center gap-1.5 transition-colors hidden sm:flex"
+              className="px-3 py-1.5 rounded-xl bg-[#1c2128] hover:bg-[#2d333b] text-gray-200 text-xs font-mono font-bold border border-[#30363d] flex items-center gap-1.5 transition-colors"
             >
               <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
               <span>Open in Tab</span>
@@ -85,7 +103,7 @@ export default function PdfPreviewModal({ isOpen, url, title, onClose, onDownloa
         {/* PDF Viewer Body */}
         <div className="flex-1 bg-[#090d13] relative overflow-hidden flex flex-col">
           <iframe
-            src={streamUrl}
+            src={activeFrameUrl}
             title={title || 'PDF Document Preview'}
             className="w-full h-full border-0"
           />
