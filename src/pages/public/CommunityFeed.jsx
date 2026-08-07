@@ -95,6 +95,7 @@ export default function CommunityFeed() {
 
   const fileInputRef = useRef(null);
   const searchTimerRef = useRef(null);
+  const commentSubmittingRef = useRef(false);
 
   // Threaded Discussion Drawer State per Post
   const [activeCommentPostId, setActiveCommentPostId] = useState(null);
