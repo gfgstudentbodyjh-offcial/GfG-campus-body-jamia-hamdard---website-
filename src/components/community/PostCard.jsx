@@ -9,7 +9,7 @@ import AuthorIdentity from '../common/AuthorIdentity';
 import RoleBadge from '../common/RoleBadge';
 import ContentActionMenu from '../common/ContentActionMenu';
 import TechCard from '../common/TechCard';
-import { resolveAvatarUrl, isValidMediaUrl } from '../../utils/mediaResolver';
+import { resolveAvatarUrl, isValidMediaUrl, getStreamPdfUrl } from '../../utils/mediaResolver';
 
 export default function PostCard({
   post,
@@ -234,11 +234,7 @@ export default function PostCard({
               </div>
 
               <a
-                href={
-                  pdf.url?.startsWith('http')
-                    ? `/api/media/stream-pdf?url=${encodeURIComponent(pdf.url)}&filename=${encodeURIComponent(pdf.fileName || 'document.pdf')}`
-                    : pdf.url
-                }
+                href={getStreamPdfUrl(pdf.url, { filename: pdf.fileName || 'document.pdf' })}
                 target="_blank"
                 rel="noreferrer"
                 className="px-3.5 py-2 rounded-lg bg-[#18202c] hover:bg-[#2f9e44] text-white text-xs font-bold border border-[#30363d] flex items-center gap-1.5 transition-colors flex-shrink-0"

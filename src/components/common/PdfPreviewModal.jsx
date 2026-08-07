@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { X, ExternalLink, Download, FileText, Loader2 } from 'lucide-react';
+import { getStreamPdfUrl } from '../../utils/mediaResolver';
 
 export default function PdfPreviewModal({ isOpen, url, title, onClose, onDownload }) {
   useEffect(() => {
@@ -25,11 +26,8 @@ export default function PdfPreviewModal({ isOpen, url, title, onClose, onDownloa
 
   if (!isOpen || !url) return null;
 
-  // Resolve target stream URL for 100% clean inline PDF delivery
-  let streamUrl = url;
-  if (url && (url.includes('cloudinary.com') || url.startsWith('http')) && url.toLowerCase().includes('.pdf')) {
-    streamUrl = `/api/media/stream-pdf?url=${encodeURIComponent(url)}`;
-  }
+  // Resolve target stream URL safely for production delivery
+  const streamUrl = getStreamPdfUrl(url, { filename: title });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in">

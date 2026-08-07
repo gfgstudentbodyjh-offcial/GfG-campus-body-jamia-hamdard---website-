@@ -8,6 +8,7 @@ import TechCard from '../../components/common/TechCard';
 import PdfPreviewModal from '../../components/common/PdfPreviewModal';
 
 import cacheService from '../../services/cacheService';
+import { getStreamPdfUrl } from '../../utils/mediaResolver';
 
 /**
  * Robust extraction of resource URL across production MongoDB schemas.
@@ -94,18 +95,14 @@ export default function ResourcesPage() {
     return unsub;
   }, [category]);
 
-  const handleDownload = async (id, fileUrl) => {
+  const handleDownload = async (id, fileUrl, title) => {
     try {
       if (id) await api.patch(`/resources/${id}/download`);
     } catch (err) {
       console.warn(err);
     }
 
-    let targetUrl = fileUrl;
-    if (fileUrl && fileUrl.includes('cloudinary.com') && fileUrl.toLowerCase().endsWith('.pdf')) {
-      targetUrl = `/api/media/stream-pdf?url=${encodeURIComponent(fileUrl)}&download=true`;
-    }
-
+    const targetUrl = getStreamPdfUrl(fileUrl, { download: true, filename: title });
     window.open(targetUrl, '_blank');
   };
 
