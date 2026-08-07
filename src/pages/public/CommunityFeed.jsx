@@ -615,11 +615,27 @@ export default function CommunityFeed() {
     try {
       const res = await api.post(`/posts/${activeCommentPostId}/comments`, {
         content: text.trim(),
+        authorRef: currentMemberId,
         parentCommentId,
         clientRequestId
       });
 
-      const newComment = res.data.data;
+      const rawNewComment = res.data.data || res.data.comment || {};
+      const newComment = {
+        _id: rawNewComment._id || ('cmt_' + Date.now()),
+        content: text.trim(),
+        createdAt: rawNewComment.createdAt || new Date().toISOString(),
+        parentCommentId,
+        ...rawNewComment,
+        authorRef: (typeof rawNewComment.authorRef === 'object' && rawNewComment.authorRef && rawNewComment.authorRef.name) ? rawNewComment.authorRef : {
+          _id: currentMemberId,
+          name: authMember?.name || user?.username || 'Community Member',
+          photo: authMember?.photo || user?.avatar || '',
+          role: authMember?.role || 'Member',
+          username: authMember?.username || user?.username || 'member'
+        },
+        replies: rawNewComment.replies || []
+      };
 
       if (parentCommentId) {
         setPostComments(prev => prev.map(c => {
