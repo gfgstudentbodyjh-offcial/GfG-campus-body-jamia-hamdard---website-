@@ -21,31 +21,47 @@ export default function CommentSection({
   const [activeReplyToId, setActiveReplyToId] = useState(null);
   const [replyText, setReplyText] = useState('');
   const [expandedReplies, setExpandedReplies] = useState({}); // { [commentId]: boolean }
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmittingReply, setIsSubmittingReply] = useState(false);
 
   const scrollContainerRef = useRef(null);
   const commentsEndRef = useRef(null);
 
   const handleTopSubmit = async (e) => {
     e.preventDefault();
-    if (!commentText.trim()) return;
+    if (!commentText.trim() || isSubmitting) return;
     const text = commentText;
-    setCommentText('');
-    if (onAddComment) {
-      await onAddComment(text, null);
+    setIsSubmitting(true);
+    try {
+      if (onAddComment) {
+        await onAddComment(text, null);
+      }
+      setCommentText('');
+      setTimeout(() => {
+        commentsEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 150);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
     }
-    setTimeout(() => {
-      commentsEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }, 150);
   };
 
   const handleReplySubmit = async (e, parentCommentId) => {
     e.preventDefault();
-    if (!replyText.trim()) return;
+    if (!replyText.trim() || isSubmittingReply) return;
     const text = replyText;
-    setReplyText('');
-    setActiveReplyToId(null);
-    if (onAddComment) {
-      await onAddComment(text, parentCommentId);
+    setIsSubmittingReply(true);
+    try {
+      if (onAddComment) {
+        await onAddComment(text, parentCommentId);
+      }
+      setReplyText('');
+      setActiveReplyToId(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmittingReply(false);
     }
   };
 
@@ -82,16 +98,26 @@ export default function CommentSection({
           type="text"
           placeholder="Write a comment..."
           value={commentText}
+          disabled={isSubmitting}
           onChange={(e) => setCommentText(e.target.value)}
-          className="flex-1 bg-[#0a0d12] border border-[#30363d] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#2f9e44] transition-colors"
+          className="flex-1 bg-[#0a0d12] border border-[#30363d] rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-[#2f9e44] transition-colors disabled:opacity-50"
         />
         <button
           type="submit"
-          disabled={!commentText.trim()}
+          disabled={!commentText.trim() || isSubmitting}
           className="px-4 py-2.5 rounded-xl gradient-button text-xs font-bold flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
         >
-          <Send className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Comment</span>
+          {isSubmitting ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>Posting...</span>
+            </>
+          ) : (
+            <>
+              <Send className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Comment</span>
+            </>
+          )}
         </button>
       </form>
 
@@ -176,17 +202,30 @@ export default function CommentSection({
                       type="text"
                       placeholder={`Reply to ${authorName}...`}
                       value={replyText}
+                      disabled={isSubmittingReply}
                       onChange={(e) => setReplyText(e.target.value)}
-                      className="flex-1 bg-[#121721] border border-[#30363d] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#2f9e44]"
+                      className="flex-1 bg-[#121721] border border-[#30363d] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#2f9e44] disabled:opacity-50"
                       autoFocus
                     />
-                    <button type="submit" className="px-3 py-1.5 rounded-lg gradient-button text-xs font-bold whitespace-nowrap">
-                      Reply
+                    <button
+                      type="submit"
+                      disabled={!replyText.trim() || isSubmittingReply}
+                      className="px-3 py-1.5 rounded-lg gradient-button text-xs font-bold whitespace-nowrap flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSubmittingReply ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>Replying...</span>
+                        </>
+                      ) : (
+                        <span>Reply</span>
+                      )}
                     </button>
                     <button
                       type="button"
+                      disabled={isSubmittingReply}
                       onClick={() => setActiveReplyToId(null)}
-                      className="px-2 py-1.5 text-xs text-gray-400 hover:text-white"
+                      className="px-2 py-1.5 text-xs text-gray-400 hover:text-white disabled:opacity-50"
                     >
                       Cancel
                     </button>
